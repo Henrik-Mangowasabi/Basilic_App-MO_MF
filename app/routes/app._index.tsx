@@ -79,9 +79,9 @@ export const loader = async ({ request }: any) => {
         loadMF('CUSTOMER'), loadMF('ORDER'), loadMO()
     ]);
 
-    // MODIF COMPATIBILITÉ V7 : On retourne l'objet directement sans "json()"
     const shopNameData = await admin.graphql(`{shop{name}}`).then(r=>r.json());
     
+    // MODIF COMPATIBILITÉ V7 : On retourne l'objet directement sans "json()"
     return { 
         shop: shopNameData.data.shop.name,
         mfData: { p, v, c, cl, o }, 
@@ -147,7 +147,8 @@ export const action = async ({ request }: any) => {
 
 // --- FRONTEND ---
 export default function Index() {
-    const { shop, mfData, moData } = useLoaderData<typeof loader>();
+    // MODIF COMPATIBILITÉ V7 : Typage générique simplifié
+    const { shop, mfData, moData } = useLoaderData<any>();
     const submit = useSubmit();
     const [activeTab, setActiveTab] = useState("mf");
     const [modalData, setModalData] = useState<any>(null);
