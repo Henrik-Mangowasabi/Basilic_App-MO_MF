@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { json } from "@remix-run/node";
-import { useLoaderData, useSubmit, useActionData } from "@remix-run/react";
+// MODIF COMPATIBILITÉ V7 : Imports depuis 'react-router'
+import { useLoaderData, useSubmit, useActionData } from "react-router"; 
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
@@ -51,8 +51,8 @@ export const loader = async ({ request }: any) => {
         `;
         try {
             const res = await admin.graphql(q);
-            const json = await res.json();
-            return (json.data?.metafieldDefinitions?.nodes || []).map((n: any) => ({
+            const jsonRes = await res.json();
+            return (jsonRes.data?.metafieldDefinitions?.nodes || []).map((n: any) => ({
                 ...n, kind: 'MF', ownerType, img: imgMap[n.id],
                 count: n.metafieldsCount, type: n.type?.name
             }));
@@ -65,8 +65,8 @@ export const loader = async ({ request }: any) => {
         `;
         try {
             const res = await admin.graphql(q);
-            const json = await res.json();
-            return (json.data?.metaobjectDefinitions?.nodes || []).map((n: any) => ({
+            const jsonRes = await res.json();
+            return (jsonRes.data?.metaobjectDefinitions?.nodes || []).map((n: any) => ({
                 ...n, kind: 'MO', ownerType: 'MO', img: imgMap[n.id],
                 count: n.metaobjectsCount, fieldsCount: n.fieldDefinitions.length
             }));
@@ -79,20 +79,23 @@ export const loader = async ({ request }: any) => {
         loadMF('CUSTOMER'), loadMF('ORDER'), loadMO()
     ]);
 
-    return json({ 
-        shop: (await admin.graphql(`{shop{name}}`).then(r=>r.json())).data.shop.name,
+    // MODIF COMPATIBILITÉ V7 : On retourne l'objet directement sans "json()"
+    const shopNameData = await admin.graphql(`{shop{name}}`).then(r=>r.json());
+    
+    return { 
+        shop: shopNameData.data.shop.name,
         mfData: { p, v, c, cl, o }, 
         moData 
-    });
+    };
 };
 
 // --- ACTION (BACKEND MUTATIONS) ---
 export const action = async ({ request }: any) => {
     const { admin } = await authenticate.admin(request);
     const formData = await request.formData();
-    const action = formData.get("action");
+    const actionType = formData.get("action");
 
-    if (action === "upload_image") {
+    if (actionType === "upload_image") {
         const id = formData.get("id") as string;
         const image = formData.get("image") as string;
         await db.localImage.upsert({
@@ -100,16 +103,16 @@ export const action = async ({ request }: any) => {
             update: { data: image },
             create: { id, data: image }
         });
-        return json({ ok: true });
+        return { ok: true };
     }
 
-    if (action === "delete_image") {
+    if (actionType === "delete_image") {
         const id = formData.get("id") as string;
         await db.localImage.delete({ where: { id } }).catch(() => {});
-        return json({ ok: true });
+        return { ok: true };
     }
 
-    if (action === "update_desc") {
+    if (actionType === "update_desc") {
         const id = formData.get("id") as string;
         const desc = formData.get("description") as string;
         const ownerType = formData.get("ownerType") as string;
@@ -126,20 +129,20 @@ export const action = async ({ request }: any) => {
             variables = { d: { ownerType, namespace: ns, key: kParts.join('.'), name, description: desc } };
         }
         await admin.graphql(mutation, { variables });
-        return json({ ok: true });
+        return { ok: true };
     }
 
-    if (action === "delete_item") {
+    if (actionType === "delete_item") {
         const id = formData.get("id") as string;
         const type = formData.get("type") as string; // MF or MO
         const q = type === 'MF' 
             ? `#graphql mutation { metafieldDefinitionDelete(id: "${id}") { userErrors { message } } }`
             : `#graphql mutation { metaobjectDefinitionDelete(id: "${id}") { userErrors { message } } }`;
         await admin.graphql(q);
-        return json({ ok: true });
+        return { ok: true };
     }
 
-    return json({ ok: false });
+    return { ok: false };
 };
 
 // --- FRONTEND ---
