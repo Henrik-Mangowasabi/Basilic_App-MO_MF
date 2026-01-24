@@ -648,3 +648,69 @@ tr[role="rowgroup"]::after {
 
 
 
+
+/* ============================================
+   DROPDOWN MENU CUSTOM STYLES
+   ============================================ */
+
+/* Le container réel du popover */
+.mf-dropdown-content {
+    min-width: 120px !important;
+    width: auto !important;
+    padding: 6px !important;
+    background-color: white !important;
+    border: 1px solid #E4E4E7 !important;
+    border-radius: 14px !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* On neutralise les styles par défaut de HeroUI sur le popover content */
+.mf-dropdown-content::before {
+    display: none !important;
+}
+
+.mf-dropdown-item {
+    border-radius: 10px !important;
+    padding: 8px 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    background-color: transparent !important;
+    transition: background-color 0.2s !important;
+    cursor: pointer !important;
+}
+
+.mf-dropdown-item[data-hover="true"] {
+    background-color: #F4F4F5 !important;
+}
+
+.mf-dropdown-item__title {
+    font-family: 'Inter', sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    line-height: 20px !important;
+    color: #71717A !important;
+    white-space: nowrap !important; /* EMPÊCHE LA TRONCATURE */
+}
+
+.mf-dropdown-item[data-hover="true"] .mf-dropdown-item__title {
+    color: #18181B !important;
+}
+
+/* Edit Item Specifics */
+.mf-dropdown-item--edit {
+    color: #71717A !important;
+}
+
+/* Delete Item Specifics */
+.mf-dropdown-item--delete {
+    color: #EF4444 !important;
+}
+
+.mf-dropdown-item--delete .mf-dropdown-item__title {
+    color: #EF4444 !important;
+}
+
+.mf-dropdown-item--delete[data-hover="true"] .mf-dropdown-item__title {
+    color: #DC2626 !important;
+}

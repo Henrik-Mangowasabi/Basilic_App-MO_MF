@@ -283,7 +283,41 @@ export const action = async ({ request }: any) => {
     const actionType = formData.get("action");
 
     if (actionType === "delete_item") {
-        await admin.graphql(`#graphql mutation { metafieldDefinitionDelete(id: "${formData.get("id")}") { userErrors { message } } }`);
+        const idsRaw = formData.get("ids") as string;
+        const id = formData.get("id") as string;
+        let ids: string[] = [];
+
+        if (idsRaw) {
+            try {
+                ids = JSON.parse(idsRaw);
+            } catch (e) {
+                ids = [];
+            }
+        } else if (id) {
+            ids = [id];
+        }
+
+        for (const deleteId of ids) {
+            if (!deleteId) continue;
+            try {
+                const response = await admin.graphql(
+                    `#graphql
+                    mutation DeleteMetafield($id: ID!) {
+                        metafieldDefinitionDelete(id: $id) {
+                            userErrors {
+                                message
+                            }
+                        }
+                    }`,
+                    {
+                        variables: { id: deleteId },
+                    }
+                );
+                await response.json();
+            } catch (err) {
+                console.error(`Error deleting metafield ${deleteId}:`, err);
+            }
+        }
         return { ok: true };
     }
     
@@ -433,7 +467,7 @@ export const action = async ({ request }: any) => {
 
 // --- FRONTEND ---
 export default function AppMf() {
-    const { shop, shopDomain, mfData, totalCount, moCount = 0 } = useLoaderData<any>();
+    const { shopDomain, mfData, totalCount, moCount = 0 } = useLoaderData<any>();
     const submit = useSubmit();
     const fetcher = useFetcher();
     
@@ -443,17 +477,43 @@ export default function AppMf() {
     const [editDescription, setEditDescription] = useState("");
     const [editName, setEditName] = useState("");
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-    const [selectedKeys, setSelectedKeys] = useState<Set<React.Key>>(new Set([]));
+    const [selectedKeys, setSelectedKeys] = useState<any>(new Set([]));
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
+    const [deleteModalTitle, setDeleteModalTitle] = useState("");
     const initializedRef = useRef(false);
 
+    const handleDeleteClick = (item: any) => {
+        setPendingDeleteIds([item.id]);
+        setDeleteModalTitle(`Supprimer "${item.name}" ?`);
+        setDeleteConfirmOpen(true);
+    };
+
     const handleBulkDelete = () => {
-        const idsToDelete = Array.from(selectedKeys).map(k => String(k));
-        if (confirm(`Supprimer ${idsToDelete.length} champs ?`)) {
-            idsToDelete.forEach(id => {
-                submit({ action: 'delete_item', id }, { method: 'post' });
+        let idsToDelete: string[] = [];
+        
+        if ((selectedKeys as any) === "all") {
+            Object.values(mfData).forEach((section: any) => {
+                if (Array.isArray(section)) {
+                    section.forEach((item: any) => idsToDelete.push(String(item.id)));
+                }
             });
-            setSelectedKeys(new Set([]));
+        } else {
+            idsToDelete = Array.from(selectedKeys).map(k => String(k));
         }
+
+        if (idsToDelete.length === 0) return;
+
+        setPendingDeleteIds(idsToDelete);
+        setDeleteModalTitle(`Supprimer ${idsToDelete.length} champs ?`);
+        setDeleteConfirmOpen(true);
+    };
+
+    const confirmDeletion = () => {
+        submit({ action: 'delete_item', ids: JSON.stringify(pendingDeleteIds) }, { method: 'post' });
+        setSelectedKeys(new Set([]));
+        setDeleteConfirmOpen(false);
+        setPendingDeleteIds([]);
     };
 
     const norm = (s: string) => {
@@ -740,7 +800,13 @@ export default function AppMf() {
                 case "menu":
                     return (
                         <div className="mf-cell mf-cell--center">
-                            <Dropdown>
+                            <Dropdown 
+                                placement="bottom-end" 
+                                offset={10}
+                                classNames={{
+                                    content: "mf-dropdown-content"
+                                }}
+                            >
                                 <DropdownTrigger>
                                     <Button isIconOnly variant="light" size="sm" className="text-default-400">
                                         <Icons.VerticalDots />
@@ -748,16 +814,16 @@ export default function AppMf() {
                                 </DropdownTrigger>
                                 <DropdownMenu 
                                     aria-label="Actions"
-                                    className="w-[150px] p-[14px_16px] flex flex-col gap-[2px] rounded-[14px] border border-[#D4D4D8] bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.10),0_2px_4px_-2px_rgba(0,0,0,0.10)]"
+                                    className="p-0"
                                     itemClasses={{
-                                        base: "rounded-[6px] px-2 py-1.5 h-auto min-h-0 bg-transparent transition-colors data-[hover=true]:bg-[#F4F4F5]",
-                                        title: "font-inter text-[14px] font-normal leading-[20px]"
+                                        base: "mf-dropdown-item",
+                                        title: "mf-dropdown-item__title"
                                     }}
                                 >
                                     <DropdownItem 
                                         key="edit" 
-                                        startContent={<Icons.Edit />}
-                                        className="text-[#71717A] data-[hover=true]:text-[#18181B]"
+                                        startContent={<Icons.Edit width={16} height={16} />}
+                                        className="mf-dropdown-item--edit"
                                         onPress={() => {
                                             setModalData(item);
                                             setEditName(item.name || '');
@@ -765,15 +831,15 @@ export default function AppMf() {
                                             setIsModalOpen(true);
                                         }}
                                     >
-                                        Modifier
+                                        Editer
                                     </DropdownItem>
                                     <DropdownItem 
                                         key="delete" 
-                                        className="text-[#EF4444] data-[hover=true]:text-[#DC2626]" 
-                                        startContent={<Icons.Delete className="text-inherit" />}
+                                        className="mf-dropdown-item--delete" 
+                                        startContent={<Icons.Delete width={16} height={16} />}
                                         onPress={() => handleDeleteClick(item)}
                                     >
-                                        Supprimer
+                                        supprimer
                                     </DropdownItem>
                                 </DropdownMenu>
                             </Dropdown>
@@ -829,20 +895,16 @@ export default function AppMf() {
                                 className="mf-table"
                                 removeWrapper
                                 selectionMode="multiple"
-                                selectionMode="multiple"
                                 selectionBehavior="toggle"
                                 onRowAction={() => {}} // Intercept click to prevent selection
                                 selectedKeys={
-                                    // 1. Isolate selection for THIS table only
-                                    // If "all" is selected globally, we pass "all" (HeroUI handles it)
-                                    // Otherwise we filter global keys to keep only those present in this section
                                     (selectedKeys as any) === "all" 
                                         ? "all" 
                                         : new Set(
-                                            [...selectedKeys].filter(k => 
+                                            [...Array.from(selectedKeys)].filter(k => 
                                                 filteredData.some((d: any) => d.id === k)
                                             )
-                                        )
+                                        ) as any
                                 }
                                 onSelectionChange={(keys: any) => {
                                     // 2. Merge local table selection with global selection
@@ -1137,6 +1199,43 @@ export default function AppMf() {
                         </div>
                     </div>
                 )}
+            </BasilicModal>
+
+            <BasilicModal
+                isOpen={deleteConfirmOpen}
+                onClose={() => setDeleteConfirmOpen(false)}
+                title="Confirmation de suppression"
+                footer={
+                    <>
+                        <Button
+                            variant="light"
+                            onPress={() => setDeleteConfirmOpen(false)}
+                            className="bg-[#F4F4F5] hover:bg-[#E4E4E7] text-[#71717A] hover:text-[#18181B] font-medium transition-colors h-10 px-4 min-w-0 rounded-[12px]"
+                            disableRipple
+                        >
+                            Annuler
+                        </Button>
+                        <Button
+                            onPress={confirmDeletion}
+                            className="bg-[#F43F5E] hover:bg-[#E11D48] text-white font-medium h-10 px-6 rounded-[12px] transition-colors"
+                        >
+                            Confirmer la suppression
+                        </Button>
+                    </>
+                }
+            >
+                <div className="flex flex-col gap-4 py-2">
+                    <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600">
+                        <Icons.Delete />
+                        <p className="font-semibold text-sm">Action irréversible</p>
+                    </div>
+                    <p className="text-[#09090B] text-sm leading-relaxed">
+                        {deleteModalTitle}
+                    </p>
+                    <p className="text-[#71717A] text-xs leading-relaxed">
+                        Cette action supprimera définitivement la définition du champ méta. Les valeurs déjà enregistrées pour vos produits ou autres ressources pourraient ne plus être accessibles via l'administration Shopify.
+                    </p>
+                </div>
             </BasilicModal>
 
             <BasilicModal
