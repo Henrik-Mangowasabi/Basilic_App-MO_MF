@@ -1,0 +1,559 @@
+/* ============================================
+   METAFIELDS TABLE - Styles réutilisables
+   ============================================ */
+
+/* --- CELLULES DE BASE --- */
+.mf-cell {
+    height: 100%;
+    width: 100%;
+    padding: 12px 8px;
+}
+
+.mf-cell--multi {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    justify-content: center;
+}
+
+.mf-cell--center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mf-cell--start {
+    display: flex;
+    align-items: center;
+}
+
+/* --- COLONNES DEV MODE --- */
+.mf-cell--dev {
+    position: absolute;
+    inset: 0;
+    background-color: #F4F4F5;
+    border-left: 1px solid white;
+    transition: none !important;
+}
+
+.mf-cell--dev:first-child {
+    border-left: none;
+}
+
+/* --- TEXTES --- */
+.mf-text--title {
+    color: var(--colors-layout-foreground, #11181C);
+    /* text-small */
+    font-family: Inter;
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 20px;
+}
+
+.mf-text--desc {
+    color: var(--colors-common-zinc-500, #71717A);
+    /* text-tiny */
+    font-family: Inter;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+.mf-text--key {
+    color: var(--colors-common-zinc-500, #71717A);
+    /* text-tiny */
+    font-family: Inter;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mf-text--status {
+    color: var(--colors-common-zinc-500, #71717A);
+    /* text-tiny */
+    font-family: Inter;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- BADGE COUNT --- */
+.mf-badge--count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    font-family: Inter;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 16px; 
+
+    background: rgba(212, 212, 216, 0.40);
+    border-radius: 100px;
+    padding: 4px 10px;
+    color: #000;
+}
+
+.mf-table__row[data-selected="true"] .mf-badge--count,
+.mf-table__row[data-hover="true"] .mf-badge--count {
+    background: rgba(0, 111, 238, 0.20);
+}
+
+
+/* --- CHIP TYPE --- */
+.mf-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    font-family: Inter;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 16px; 
+
+    background: rgba(212, 212, 216, 0.40);
+    border-radius: 100px;
+    padding: 4px 10px;
+    color: #000;
+}
+
+.mf-table__row[data-selected="true"] .mf-chip,
+.mf-table__row[data-hover="true"] .mf-chip {
+    background: #FAFAFA
+}
+
+/* --- ACTIONS --- */
+.mf-action-link {
+    color: #A1A1AA;
+    transition: color 0.2s;
+}
+
+.mf-action-link:hover {
+    color: #3F3F46;
+}
+
+/* --- SECTION HEADER --- */
+.mf-section {
+    margin-bottom: 16px;
+}
+
+.mf-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    border: 1px solid #E4E4E7;
+    background-color: #FAFAFA;
+    padding: 14px 16px;
+    transition: background-color 0.2s;
+}
+
+.mf-section__header:hover {
+    background-color: #F4F4F5;
+}
+
+.mf-section__header--open {
+    border-radius: 8px 8px 0 0;
+    border-bottom: none;
+}
+
+.mf-section__header--closed {
+    border-radius: 8px;
+}
+
+/* Supprimer les ::after de HeroUI sur le thead */
+.mf-table thead tr::after,
+.mf-table thead::after,
+thead tr::after,
+tr[role="rowgroup"]::after {
+    display: none !important;
+    content: none !important;
+}
+
+.mf-section__title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mf-section__icon {
+    color: #3F3F46;
+}
+
+.mf-section__title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #18181B;
+}
+
+.mf-section__count {
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: #F4F4F5;
+    color: black;
+}
+
+.mf-section__chevron {
+    transition: transform 0.2s;
+}
+
+.mf-section__chevron--open {
+    transform: rotate(90deg);
+}
+
+/* --- TABLE --- */
+.mf-table {
+    padding: 0;
+    margin: 0;
+}
+
+.mf-table__wrapper {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.mf-table__base {
+    border: 1px solid #E4E4E7;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    background-color: white;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+}
+
+/* Supprimer l'espace entre section header et table */
+.mf-section__header--open + div {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+ 
+/* OVERRIDE HEROUI - Headers */
+.mf-table__header {
+    background-color: #F4F3F4;
+    height: 44px;
+    padding: 12px 8px;
+    position: relative;
+    width: fit-content;
+
+    color: #71717A;
+    font-family: Inter;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 20px; /* 166.667% */
+    text-transform: uppercase;
+}
+
+/* Border radius sur le thead */
+.mf-table thead {
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+}
+
+.mf-table thead tr {
+    border-radius: 8px 8px 0 0;
+}
+
+/* Border radius sur les coins du header */
+.mf-table__header:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 0;
+    width: 40px !important; /* Slightly wider for comfort */
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+
+    span {
+        margin: 0;
+    }
+}
+
+.mf-table__header:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 0;
+}
+
+/* Forcer les coins du bas à 0 */
+.mf-table__header {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+}
+
+/* Headers Dev Mode */
+.mf-col--key.mf-table__header--dev {
+    background-color: #E3E4E7;
+    color: #70727B;
+
+    div div {
+        height: 30px;
+        left: -8px;
+        top: -42px;
+    }
+}
+.mf-col--type.mf-table__header--dev {
+    background-color: #E3E4E7;
+    color: #70727B;
+}
+.mf-col--status.mf-table__header--dev {
+    background-color: #E3E4E7;
+    color: #70727B;
+}
+.mf-col--code.mf-table__header--dev {
+    background-color: #E3E4E7;
+    color: #70727B;
+}
+
+/* OVERRIDE HEROUI - Cells */
+.mf-table__cell {
+    position: relative !important;
+    padding: 0 !important;
+    height: 64px !important;
+    vertical-align: middle !important;
+}
+
+.mf-table__cell:first-child {
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    width: 40px !important;
+
+    span {
+        margin: 0;
+    }
+}
+.mf-table__cell:last-child {
+}
+
+/* OVERRIDE HEROUI - Rows */
+.mf-table__row {
+    border: none !important;
+}
+
+
+.mf-table__row[data-selected="true"],
+.mf-table__row[data-hover="true"] {
+    background-color: rgba(0, 111, 238, 0.20) !important;
+}
+
+/* Ensure Dev Mode columns blend in on hover/select */
+.mf-table__row[data-selected="true"] .mf-cell--dev,
+.mf-table__row[data-hover="true"] .mf-cell--dev {
+    background-color: transparent !important;
+    border-left-color: rgba(255, 255, 255, 0.5);
+}
+
+/* --- DEV MODE BADGE --- */
+.mf-dev-badge {
+    position: absolute;
+    top: -28px;
+    left: -12px;
+    background-color: #E4E4E7;
+    color: #71717A;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    z-index: 10;
+}
+
+/* --- EMPTY STATE --- */
+.mf-empty {
+    padding: 32px;
+    text-align: center;
+    color: #A1A1AA;
+    font-style: italic;
+    border: 1px solid #E4E4E7;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    background-color: white;
+}
+
+/* ============================================
+   RESET HEROUI - Neutraliser les styles par défaut
+   ============================================ */
+
+/* Neutraliser TOUS les styles HeroUI sur les headers */
+.mf-table__header[class*="group"],
+.mf-table__header[class*="px-"],
+.mf-table__header[class*="bg-"],
+.mf-table__header[class*="text-"],
+.mf-table__header[class*="font-"],
+.mf-table__header[class*="rounded-"],
+.mf-table__header[class*="outline-"],
+.mf-table__header[class*="data-"] {
+    /* Les !important ci-dessus écrasent déjà tout */
+}
+
+/* Neutraliser TOUS les styles HeroUI sur les cellules */
+.mf-table__cell[class*="align-"],
+.mf-table__cell[class*="whitespace-"],
+.mf-table__cell[class*="text-"],
+.mf-table__cell[class*="font-"],
+.mf-table__cell[class*="outline-"],
+.mf-table__cell[class*="before:"],
+.mf-table__cell[class*="data-"],
+.mf-table__cell[class*="group-"] {
+    /* Les !important ci-dessus écrasent déjà tout */
+}
+
+/* Supprimer les pseudo-éléments before de HeroUI */
+.mf-table__cell::before {
+    display: none !important;
+    content: none !important;
+}
+
+.mf-table__row::before {
+    display: none !important;
+    content: none !important;
+}
+
+/* ============================================
+   COLONNES SPÉCIFIQUES - Classes par colonne
+   ============================================ */
+
+/* ============================================
+   COLONNES SPÉCIFIQUES - Classes par colonne
+   ============================================ */
+
+/* Colonne NAME */
+.mf-col--name {
+    width: 100%;
+    min-width: 200px;
+}
+
+/* Colonne KEY (Dev Mode) */
+.mf-col--key {
+    flex: 1;
+    min-width: 150px;
+}
+
+/* Colonne TYPE (Dev Mode) */
+.mf-col--type {
+    width: auto !important;
+    min-width: 120px;
+}
+
+/* Colonne STATUS (Dev Mode) */
+.mf-col--status {
+    width: auto !important;
+    min-width: 150px;
+}
+
+/* Colonne CODE (Dev Mode) */
+.mf-col--code {
+    width: auto !important;
+    min-width: 80px;
+    text-align: center !important;
+}
+
+/* Colonne COUNT */
+.mf-col--count {
+    width: 100px !important;
+    text-align: center !important;
+}
+
+/* Colonne ACTIONS */
+.mf-col--actions {
+    width: 50px !important;
+    text-align: center !important;
+}
+
+/* Colonne MENU */
+.mf-col--menu {
+    width: 50px !important;
+    text-align: center !important;
+}
+
+/* Force centrage cellules */
+.mf-cell--center {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Force centrage spécifique par type de contenu si besoin */
+.mf-col--menu .mf-cell {
+    justify-content: center !important;
+}
+
+/* ============================================
+   CHECKBOX CUSTOM STYLING
+   ============================================ */
+
+/* ============================================
+   CHECKBOX CUSTOM STYLING
+   ============================================ */
+
+/* 1. Reset Base Box */
+.mf-table label span:not([class*="hidden"]):not(svg) {
+    border-radius: 6px !important;
+    border: 2px solid #D4D4D8 !important;
+    background-color: transparent !important;
+    transition: all 0.2s;
+}
+
+/* 2. FORCE BLUE BACKGROUND on logic states (Selected/Indeterminate) */
+/* We target the span AND the ::after pseudo-element just in case HeroUI uses it for the fill */
+
+.mf-table__row[data-selected="true"] label span:not([class*="hidden"]):not(svg),
+.mf-table__row[data-selected="true"] label[data-selected="true"] span:not([class*="hidden"]):not(svg),
+.mf-table label[data-selected="true"] span:not([class*="hidden"]):not(svg),
+.mf-table__header label[data-selected="true"] span:not([class*="hidden"]):not(svg),
+.mf-table__header label[data-indeterminate="true"] span:not([class*="hidden"]):not(svg) {
+    background-color: #006FEE !important;
+    border-color: #006FEE !important;
+}
+
+/* Force ::after to be blue if it exists (User request "un truc comme ça") */
+.mf-table__row[data-selected="true"] label span::after,
+.mf-table__header label[data-selected="true"] span::after,
+.mf-table__header label[data-indeterminate="true"] span::after {
+    background-color: #006FEE !important;
+}
+
+/* 3. Icons (Checkmark / Minus) - White */
+.mf-table label svg {
+    color: transparent !important;
+}
+
+.mf-table__row[data-selected="true"] label svg,
+.mf-table__header label[data-selected="true"] svg,
+.mf-table__header label[data-indeterminate="true"] svg {
+    color: white !important;
+    stroke: white !important;
+}
+
+/* 4. Hover States */
+.mf-table__row[data-selected="true"] label:hover span:not([class*="hidden"]):not(svg),
+.mf-table__header label[data-selected="true"]:hover span:not([class*="hidden"]):not(svg) {
+    background-color: #005BC4 !important;
+    border-color: #005BC4 !important;
+}
+
+
+

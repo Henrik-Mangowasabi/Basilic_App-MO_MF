@@ -1,125 +1,164 @@
 import { useState, useEffect, useRef } from "react";
-import { useLoaderData, useSubmit, Link } from "react-router";
+import { useLoaderData, useSubmit, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
+import "../styles/metafields-table.css";
+import { 
+  AppBrand,
+  DevModeToggle, 
+  BasilicButton, 
+  BasilicSearch, 
+  NavigationTabs,
+  BasilicModal
+} from "../components/BasilicUI";
+import { 
+  Table, 
+  TableHeader, 
+  TableColumn, 
+  TableBody, 
+  TableRow, 
+  TableCell,
+  Tooltip,
+  Button,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem
+} from "@heroui/react";
 
-// --- CSS ADAPTÉ DE GLOBAL.JS ---
-const STYLES = `
-    body, html { margin: 0; padding: 0; }
-    .mm-container { max-width: 100%; width: 100%; margin: 0; background: #fff; padding: 25px; border-radius: 0; box-shadow: none; }
-    .mm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-    .search-box { width: 100%; padding: 15px; margin-bottom: 25px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
-    
-    /* TABS */
-    .tabs { display: flex; gap: 5px; margin-bottom: 25px; border-bottom: 2px solid #ddd; }
-    .tab-link { padding: 12px 20px; cursor: pointer; border-radius: 8px 8px 0 0; font-weight: bold; color: #666; text-decoration: none; display:block; }
-    .tab-link:hover { background: #f4f6f8; text-decoration: none; }
-    .tab-link.active { background: #008060; color: #fff; }
-    .tab-badge { margin-left: 5px; opacity: 0.8; font-size: 0.9em; }
-
-    /* ACCORDION */
-    .accordion { background: #fff; cursor: pointer; padding: 15px 20px; width: 100%; border: none; text-align: left; border-bottom: 1px solid #f1f1f1; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; }
-    .accordion:hover { background: #fcfcfc; }
-    .active-acc { background: #f8f9fa; border-bottom: 2px solid #008060; color: #008060; }
-    
-    /* SECTION WRAPPER */
-    .section-wrapper { margin-bottom: 0; }
-    
-    /* TABLES */
-    .main-table { width: 100%; border-collapse: collapse; margin: 0 0 30px 0; table-layout: fixed; }
-    .section-wrapper:last-child .main-table { margin-bottom: 0; }
-    th { background: #fff; padding: 12px 5px; font-size: 11px; text-transform: uppercase; border-bottom: 2px solid #eee; color: #555; text-align:left; cursor: default; }
-    th.sortable { cursor: pointer !important; user-select: none; }
-    th.sortable:hover { background-color: #f9f9f9; }
-    td { padding: 10px 5px; border-bottom: 1px solid #eee; font-size: 13px; vertical-align: middle; }
-    
-    /* COLONNES FIXES - Comme dans global.js */
-    .col-nom-desc { width: auto; }
-    .col-img, .col-vol, .col-lien, .col-del { width: 80px; text-align: center; white-space: nowrap; }
-    
-    /* MODE DEV */
-    .col-tech, .dev-zone, .col-code, .col-type { display: none; }
-    .dev-mode .col-nom-desc { width: 30%; }
-    .dev-mode .col-tech { display: table-cell; width: 20%; word-break: break-all; white-space: normal; font-family: monospace; background-color: #e8e8e8; border-left: 1px solid #d0d0d0; }
-    .dev-mode .col-type { display: table-cell; width: 8%; background-color: #e8e8e8; border-left: 1px solid #d0d0d0; }
-    .dev-mode .dev-zone { display: table-cell; background-color: #e8e8e8; border-left: 1px solid #d0d0d0; }
-    .dev-mode .col-code { display: table-cell; width: 80px; text-align: center; white-space: nowrap; background-color: #e8e8e8; border-left: 1px solid #d0d0d0; }
-    
-    /* EN-TÊTES CENTRÉS POUR COLONNES DEV */
-    th.col-tech, th.col-type, th.dev-zone, th.col-code { text-align: center; }
-    
-    /* STYLES POUR LES CELLULES */
-    td.col-img, td.col-vol, td.col-lien, td.col-del, td.col-code { text-align: center; }
-    td.col-tech, td.dev-zone, td.col-code, td.col-type { background-color: #e8e8e8; }
-
-    /* ELEMENTS */
-    .type-pill { background: #f1f3f5; padding: 3px 8px; border-radius: 12px; font-size: 10px; display: inline-block; }
-    .count-bubble { background: #e3f2fd; color: #1976d2; padding: 2px 8px; border-radius: 50%; font-size: 12px; }
-    .img-box { width: 35px; height: 35px; position: relative; margin: 0 auto; cursor: pointer; }
-    .img-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; border: 1px solid #eee; }
-    .img-box:hover img { transform: scale(1.5); position:relative; z-index:10; transition:0.2s; }
-    .del-img { position:absolute; top:-5px; right:-5px; background:white; border-radius:50%; width:15px; height:15px; font-size:10px; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.2); }
-    
-    .edit-icon { opacity: 0.6; cursor: pointer; color: #888; margin-left: 8px; }
-    .edit-icon:hover { opacity: 1; color: #008060; }
-    .btn-del { border: none; background: none; cursor: pointer; color: #999; }
-    .btn-del:hover { color: red; }
-    
-    .highlight { background-color: #fff0f0; color: red; font-weight: bold; }
-    
-    /* MODAL */
-    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; justify-content: center; align-items: center; }
-    .modal-box { background: #fff; padding: 25px; border-radius: 12px; width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-`;
+// --- ICONS ---
+const Icons = {
+    Products: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M8.372 11.6667C7.11703 10.4068 7.23007 8.25073 8.62449 6.85091L12.6642 2.79552C14.0586 1.3957 16.2064 1.28222 17.4613 2.54206C18.7163 3.8019 18.6033 5.95797 17.2088 7.3578L15.189 9.3855" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <path opacity="0.5" d="M11.6281 8.33333C12.8831 9.59317 12.77 11.7492 11.3756 13.1491L9.35575 15.1768L7.33591 17.2045C5.94149 18.6043 3.79373 18.7178 2.53875 17.4579C1.28378 16.1981 1.39682 14.042 2.79124 12.6422L4.81111 10.6144" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+    ),
+    Variants: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M10.0001 1.66666L1.66675 5.83332L10.0001 9.99999L18.3334 5.83332L10.0001 1.66666Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M1.66675 14.1667L10.0001 18.3333L18.3334 14.1667" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M1.66675 10L10.0001 14.1667L18.3334 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Collections: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M18.3334 15.8333C18.3334 16.2754 18.1578 16.6993 17.8453 17.0118C17.5327 17.3244 17.1088 17.5 16.6667 17.5H3.33341C2.89139 17.5 2.46746 17.3244 2.1549 17.0118C1.84234 16.6993 1.66675 16.2754 1.66675 15.8333V4.16667C1.66675 3.72464 1.84234 3.30072 2.1549 2.98816C2.46746 2.67559 2.89139 2.5 3.33341 2.5H7.50008L9.16675 5H16.6667C17.1088 5 17.5327 5.17559 17.8453 5.48816C18.1578 5.80072 18.3334 6.22464 18.3334 6.66667V15.8333Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Clients: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M14.1666 17.5V15.8333C14.1666 14.9493 13.8154 14.1014 13.1903 13.4763C12.5652 12.8512 11.7173 12.5 10.8333 12.5H4.16658C3.28253 12.5 2.43468 12.8512 1.80956 13.4763C1.18444 14.1014 0.833252 14.9493 0.833252 15.8333V17.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M7.50008 9.16667C9.34103 9.16667 10.8334 7.67428 10.8334 5.83333C10.8334 3.99238 9.34103 2.5 7.50008 2.5C5.65913 2.5 4.16675 3.99238 4.16675 5.83333C4.16675 7.67428 5.65913 9.16667 7.50008 9.16667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M19.1667 17.5V15.8333C19.1662 15.0948 18.9204 14.3773 18.4679 13.7936C18.0154 13.2099 17.3819 12.793 16.6667 12.6083" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M13.3333 2.60834C14.0503 2.79192 14.6858 3.20892 15.1396 3.7936C15.5935 4.37827 15.8398 5.09736 15.8398 5.8375C15.8398 6.57765 15.5935 7.29674 15.1396 7.88141C14.6858 8.46609 14.0503 8.88309 13.3333 9.06667" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Orders: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M9.16667 18.1083C9.42003 18.2546 9.70744 18.3316 10 18.3316C10.2926 18.3316 10.58 18.2546 10.8333 18.1083L16.6667 14.775C16.9198 14.6289 17.13 14.4187 17.2763 14.1657C17.4225 13.9126 17.4997 13.6256 17.5 13.3333V6.66666C17.4997 6.37439 17.4225 6.08733 17.2763 5.83429C17.13 5.58125 16.9198 5.37113 16.6667 5.22499L10.8333 1.89166C10.58 1.74538 10.2926 1.66837 10 1.66837C9.70744 1.66837 9.42003 1.74538 9.16667 1.89166L3.33333 5.22499C3.08022 5.37113 2.86998 5.58125 2.72372 5.83429C2.57745 6.08733 2.5003 6.37439 2.5 6.66666V13.3333C2.5003 13.6256 2.57745 13.9126 2.72372 14.1657C2.86998 14.4187 3.08022 14.6289 3.33333 14.775L9.16667 18.1083Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M10 18.3333V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M2.7417 5.83334L10 10L17.2584 5.83334" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M6.25 3.55832L13.75 7.84999" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Companies: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M16.6667 5.83331H3.33341C2.41294 5.83331 1.66675 6.57951 1.66675 7.49998V15.8333C1.66675 16.7538 2.41294 17.5 3.33341 17.5H16.6667C17.5872 17.5 18.3334 16.7538 18.3334 15.8333V7.49998C18.3334 6.57951 17.5872 5.83331 16.6667 5.83331Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M13.3334 17.5V4.16667C13.3334 3.72464 13.1578 3.30072 12.8453 2.98816C12.5327 2.67559 12.1088 2.5 11.6667 2.5H8.33341C7.89139 2.5 7.46746 2.67559 7.1549 2.98816C6.84234 3.30072 6.66675 3.72464 6.66675 4.16667V17.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Locations: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M17.5 8.33331C17.5 14.1666 10 19.1666 10 19.1666C10 19.1666 2.5 14.1666 2.5 8.33331C2.5 6.34419 3.29018 4.43654 4.6967 3.03001C6.10322 1.62349 8.01088 0.833313 10 0.833313C11.9891 0.833313 13.8968 1.62349 15.3033 3.03001C16.7098 4.43654 17.5 6.34419 17.5 8.33331Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M10 10.8333C11.3807 10.8333 12.5 9.71402 12.5 8.33331C12.5 6.9526 11.3807 5.83331 10 5.83331C8.61929 5.83331 7.5 6.9526 7.5 8.33331C7.5 9.71402 8.61929 10.8333 10 10.8333Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Markets: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M10.0001 18.3334C14.6025 18.3334 18.3334 14.6024 18.3334 10C18.3334 5.39765 14.6025 1.66669 10.0001 1.66669C5.39771 1.66669 1.66675 5.39765 1.66675 10C1.66675 14.6024 5.39771 18.3334 10.0001 18.3334Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M1.66675 10H18.3334" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M10.0001 1.66669C12.0845 3.94865 13.269 6.91005 13.3334 10C13.269 13.09 12.0845 16.0514 10.0001 18.3334C7.91568 16.0514 6.73112 13.09 6.66675 10C6.73112 6.91005 7.91568 3.94865 10.0001 1.66669Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Generic: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        </svg>
+    ),
+    ChevronRight: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}>
+            <path d="M4.45508 9.96001L7.71508 6.70001C8.10008 6.31501 8.10008 5.68501 7.71508 5.30001L4.45508 2.04001" stroke="#A1A1AA" strokeWidth="1.5" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+    ),
+    Link: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M8.372 11.6667C7.11703 10.4068 7.23007 8.25073 8.62449 6.8509L12.6642 2.79552C14.0586 1.39569 16.2064 1.28221 17.4613 2.54205C18.7163 3.8019 18.6033 5.95797 17.2088 7.35779L15.189 9.3855" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <path opacity="0.5" d="M11.6278 8.33333C12.8828 9.59318 12.7698 11.7492 11.3753 13.1491L9.3555 15.1768L7.33566 17.2045C5.94124 18.6043 3.79348 18.7178 2.53851 17.4579C1.28353 16.1981 1.39658 14.042 2.79099 12.6422L4.81086 10.6145" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        </svg>
+    ),
+    VerticalDots: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" {...props}>
+            <path opacity="0.5" d="M4 8C4 8.55228 3.55228 9 3 9C2.44772 9 2 8.55228 2 8C2 7.44772 2.44772 7 3 7C3.55228 7 4 7.44772 4 8Z" fill="#18181B"/>
+            <path opacity="0.5" d="M9 8C9 8.55228 8.55228 9 8 9C7.44772 9 7 8.55228 7 8C7 7.44772 7.44772 7 8 7C8.55228 7 9 7.44772 9 8Z" fill="#18181B"/>
+            <path opacity="0.5" d="M14 8C14 8.55228 13.5523 9 13 9C12.4477 9 12 8.55228 12 8C12 7.44772 12.4477 7 13 7C13.5523 7 14 7.44772 14 8Z" fill="#18181B"/>
+        </svg>
+    ),
+    Edit: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M12.739 2.62648L11.9666 3.39888L4.86552 10.4999C4.38456 10.9809 4.14407 11.2214 3.93725 11.4865C3.69328 11.7993 3.48412 12.1378 3.31346 12.4959C3.16878 12.7994 3.06123 13.1221 2.84614 13.7674L1.93468 16.5017L1.71188 17.1701C1.60603 17.4877 1.68867 17.8378 1.92536 18.0745C2.16205 18.3112 2.51215 18.3938 2.8297 18.288L3.4981 18.0652L6.23249 17.1537C6.87777 16.9386 7.20042 16.8311 7.50398 16.6864C7.86208 16.5157 8.20052 16.3066 8.51331 16.0626C8.77847 15.8558 9.01895 15.6153 9.49992 15.1343L16.601 8.03328L17.3734 7.26088C18.6531 5.98113 18.6531 3.90624 17.3734 2.62648C16.0936 1.34673 14.0187 1.34673 12.739 2.62648Z" stroke="currentColor" strokeWidth="1.5"/>
+            <path d="M11.9665 3.39884C11.9665 3.39884 12.063 5.04019 13.5113 6.48844C14.9595 7.93669 16.6008 8.03324 16.6008 8.03324M3.498 18.0651L1.93457 16.5017" stroke="currentColor" strokeWidth="1.5"/>
+        </svg>
+    ),
+    Delete: (props: any) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}>
+            <path d="M17.0832 5H2.9165" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <path d="M15.6946 7.08333L15.3113 12.8326C15.1638 15.045 15.09 16.1512 14.3692 16.8256C13.6483 17.5 12.5397 17.5 10.3223 17.5H9.67787C7.46054 17.5 6.35187 17.5 5.63103 16.8256C4.91019 16.1512 4.83644 15.045 4.68895 12.8326L4.30566 7.08333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <path d="M7.9165 9.16667L8.33317 13.3333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <path d="M12.0832 9.16667L11.6665 13.3333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <path d="M5.4165 5C5.46307 5 5.48635 5 5.50746 4.99947C6.19366 4.98208 6.79902 4.54576 7.03252 3.90027C7.0397 3.88041 7.04706 3.85832 7.06179 3.81415L7.14269 3.57143C7.21176 3.36423 7.24629 3.26063 7.2921 3.17267C7.47485 2.82173 7.81296 2.57803 8.20368 2.51564C8.30161 2.5 8.41082 2.5 8.62922 2.5H11.3705C11.5889 2.5 11.6981 2.5 11.796 2.51564C12.1867 2.57803 12.5248 2.82173 12.7076 3.17267C12.7534 3.26063 12.7879 3.36423 12.857 3.57143L12.9379 3.81415C12.9526 3.85826 12.96 3.88042 12.9672 3.90027C13.2007 4.54576 13.806 4.98208 14.4922 4.99947C14.5133 5 14.5366 5 14.5832 5" stroke="currentColor" strokeWidth="1.5"/>
+        </svg>
+    )
+};
 
 // --- TRADUCTION TYPES ---
 const TYPE_FR: any = {
-    'single_line_text_field': '📝 Texte (1 ligne)', 'multi_line_text_field': '📝 Texte (multiligne)',
-    'number_integer': '🔢 Nombre entier', 'number_decimal': '🔢 Nombre décimal', 'boolean': 'Vrai / Faux',
-    'url': '🔗 URL', 'json': 'JSON', 'date': '📅 Date', 'date_time': '📅 Date et heure',
-    'color': '🎨 Couleur', 'weight': '⚖️ Poids', 'volume': '🧪 Volume', 'dimension': '📏 Dimension',
-    'rating': '⭐ Note', 'money': '💰 Argent', 'file_reference': '📎 Fichier',
-    'product_reference': '🛍️ Produit', 'variant_reference': '👕 Variante', 'collection_reference': '📂 Collection',
-    'page_reference': '📄 Page', 'customer_reference': '👤 Client', 'metaobject_reference': '💠 Métaobjet'
+    'single_line_text_field': 'Texte', 'multi_line_text_field': 'Texte (multi)',
+    'number_integer': 'Entier', 'number_decimal': 'Décimal', 'boolean': 'Booléen',
+    'url': 'Url', 'json': 'JSON', 'date': 'Date', 'date_time': 'Date Heure',
+    'color': 'Couleur', 'weight': 'Poids', 'volume': 'Volume', 'dimension': 'Dimension',
+    'rating': 'Note', 'money': 'Argent', 'file_reference': 'Fichier',
+    'product_reference': 'Produit', 'variant_reference': 'Variante', 'collection_reference': 'Collection',
+    'page_reference': 'Page', 'customer_reference': 'Client', 'metaobject_reference': 'Métaobjet'
 };
+
 const translateType = (t: string) => {
     if (!t) return '-';
-    if (t.startsWith('list.')) return `📚 Liste de ${TYPE_FR[t.replace('list.', '')] || t.replace('list.', '')}`;
+    if (t.startsWith('list.')) return `Liste ${TYPE_FR[t.replace('list.', '')] || t.replace('list.', '')}`;
     return TYPE_FR[t] || t;
 };
 
-// --- BACKEND LOADER ---
+// --- BACKEND LOADER & ACTION ---
 export const loader = async ({ request }: any) => {
     const { admin } = await authenticate.admin(request);
     
-    // 1. Charger Images locales
-    const localImages = await db.localImage.findMany();
-    const imgMap: Record<string, string> = {};
-    localImages.forEach(img => imgMap[img.id] = img.data);
-
-    // 2. Apps installées (pour analyse namespace) - Optionnel, peut échouer si pas de permissions
     const installedApps: Record<string, string> = {};
     try {
         const appsRes = await admin.graphql(`{ appInstallations(first:100){nodes{app{title handle}}} }`);
         const appsJson = await appsRes.json();
         appsJson.data?.appInstallations?.nodes?.forEach((n: any) => {
             if(n.app?.handle) {
-                // Stocker en lowercase pour la comparaison (comme dans global.js)
                 installedApps[n.app.handle.toLowerCase()] = n.app.title;
             }
         });
     } catch (error) {
-        // Si pas de permissions pour appInstallations, on continue sans cette info
         console.warn("Impossible de charger les applications installées:", error);
     }
     
-    // Mapping des namespaces Shopify connus vers leurs apps
     const shopifyNamespaceApps: Record<string, string> = {
         'shopify--discovery': 'Search and Discovery',
         'discovery': 'Search and Discovery',
     };
 
-    // 3. Helper GraphQL
     const loadMF = async (ownerType: string) => {
         const q = `#graphql
             query { metafieldDefinitions(ownerType: ${ownerType}, first: 50) { nodes { id name namespace key description type { name } metafieldsCount } } }
@@ -130,36 +169,29 @@ export const loader = async ({ request }: any) => {
             return (json.data?.metafieldDefinitions?.nodes || []).map((n: any) => {
                 const ns = n.namespace.toLowerCase();
                 
-                // Chercher si le namespace correspond à une app installée (comme dans global.js)
                 let appName = null;
                 let isAppInstalled = false;
                 
-                // PRIORITÉ 1: Vérifier d'abord les namespaces Shopify connus qui correspondent à des apps spécifiques
-                // Ex: shopify--discovery--* correspond à "Search and Discovery"
                 for (const [namespacePattern, appTitle] of Object.entries(shopifyNamespaceApps)) {
                     if (ns.includes(namespacePattern)) {
-                        // Chercher l'app dans les apps installées pour obtenir le titre exact
                         for (const [handle, title] of Object.entries(installedApps)) {
                             const titleLower = title.toLowerCase();
                             if (titleLower.includes('search') && titleLower.includes('discovery')) {
-                                appName = title; // Utiliser le titre exact de l'app
+                                appName = title;
                                 isAppInstalled = true;
                                 break;
                             }
                         }
-                        // Si pas trouvée dans les apps installées, utiliser le mapping
                         if (!appName) {
                             appName = appTitle;
-                            isAppInstalled = true; // App système Shopify, considérée comme "installée"
+                            isAppInstalled = true;
                         }
                         break;
                     }
                 }
                 
-                // PRIORITÉ 2: Vérifier les apps installées par handle/namespace (si pas déjà trouvé)
                 if (!appName) {
                     for (const [handle, title] of Object.entries(installedApps)) {
-                        // Comparaison exacte comme dans global.js
                         if (ns === handle || ns.includes(handle) || handle.includes(ns)) {
                             appName = title;
                             isAppInstalled = true;
@@ -168,45 +200,36 @@ export const loader = async ({ request }: any) => {
                     }
                 }
                 
-                // Déterminer le statut selon la logique de global.js
                 let status = '';
                 if (ns === 'custom' || ns === 'test_data' || ns.startsWith('etst')) {
-                    // Pour l'instant, on ne scanne pas le code, donc on met juste "Manuel"
-                    status = '👤 Manuel';
+                    status = 'Manuel';
                 } else if (appName && isAppInstalled) {
-                    // App installée - on pourrait vérifier si elle est active avec scanCode mais pour l'instant on simplifie
-                    status = `✅ App: ${appName}`;
+                    status = `App: ${appName}`;
                 } else {
-                    // PRIORITÉ 3: Vérifier si c'est un namespace Shopify système générique (pas une app spécifique)
                     if (ns.includes('shopify') && !ns.includes('--')) {
-                        // Namespace générique Shopify (ex: shopify, shopify_meta, etc.)
-                        status = '⚙️ Système Shopify';
+                        status = 'Shopify';
                     } else if (ns.includes('shopify')) {
-                        // Namespace Shopify avec -- mais pas dans notre mapping (ex: shopify--autre--)
-                        status = '⚙️ Système Shopify';
+                        status = 'Shopify';
                     } else {
-                        // App désinstallée - utiliser le namespace original (pas lowercase)
-                        status = `🗑️ App Désinstallée\nNamespace: ${n.namespace}`;
+                        status = `App Désinstallée`;
                     }
                 }
 
                 return {
                     ...n, kind: 'MF', ownerType,
-                    img: imgMap[n.id],
                     count: n.metafieldsCount,
                     typeDisplay: translateType(n.type?.name),
                     fullKey: `${n.namespace}.${n.key}`,
-                    status
+                    status,
+                    code_usage: 'Non' // Placeholder: Requires scanning theme code
                 };
             });
         } catch { return []; }
     };
 
-    // 4. Charger tout
     const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
     const results = await Promise.all(resources.map(r => loadMF(r)));
     
-    // Mapping pour le frontend
     const mfData = {
         p: results[0], v: results[1], c: results[2], cl: results[3],
         o: results[4], do_: results[5], co: results[6], loc: results[7],
@@ -215,12 +238,8 @@ export const loader = async ({ request }: any) => {
     
     const totalCount = results.reduce((acc, curr) => acc + curr.length, 0);
     
-    // Charger le nombre de MO pour l'affichage dans les tabs
     let moCount = 0;
     try {
-        const moRes = await admin.graphql(`{ metaobjectDefinitions(first: 1) { pageInfo { hasNextPage } } }`);
-        const moJson = await moRes.json();
-        // Pour avoir le vrai count, on charge tous les MO
         const moAllRes = await admin.graphql(`{ metaobjectDefinitions(first: 50) { nodes { id } } }`);
         const moAllJson = await moAllRes.json();
         moCount = moAllJson.data?.metaobjectDefinitions?.nodes?.length || 0;
@@ -230,32 +249,22 @@ export const loader = async ({ request }: any) => {
     
     const shopRes = await admin.graphql(`{shop{name myshopifyDomain}}`);
     const shopJson = await shopRes.json();
-    const shopName = shopJson.data.shop.name;
-    const shopDomain = shopJson.data.shop.myshopifyDomain;
+    const shopName = shopJson?.data?.shop?.name || 'Boutique';
+    const shopDomain = shopJson?.data?.shop?.myshopifyDomain || '';
 
     return { shop: shopName, shopDomain, mfData, totalCount, moCount };
 };
 
-// --- BACKEND ACTIONS ---
 export const action = async ({ request }: any) => {
     const { admin } = await authenticate.admin(request);
     const formData = await request.formData();
     const actionType = formData.get("action");
 
-    if (actionType === "upload_image") {
-        const id = formData.get("id") as string;
-        const image = formData.get("image") as string; // Base64
-        await db.localImage.upsert({ where: { id }, update: { data: image }, create: { id, data: image } });
-        return { ok: true };
-    }
-    if (actionType === "delete_image") {
-        await db.localImage.delete({ where: { id: formData.get("id") as string } }).catch(()=>{});
-        return { ok: true };
-    }
     if (actionType === "delete_item") {
         await admin.graphql(`#graphql mutation { metafieldDefinitionDelete(id: "${formData.get("id")}") { userErrors { message } } }`);
         return { ok: true };
     }
+    
     if (actionType === "update_desc") {
         const description = formData.get("description") as string || '';
         const key = formData.get("key") as string;
@@ -265,33 +274,20 @@ export const action = async ({ request }: any) => {
         const [ns, ...kParts] = key.split('.');
         const actualKey = kParts.join('.');
         
-        // Échapper les caractères spéciaux pour GraphQL
         const escapeGraphQL = (str: string) => {
-            return str
-                .replace(/\\/g, '\\\\')
-                .replace(/"/g, '\\"')
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t');
+            return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
         };
-        
-        const safeDescription = escapeGraphQL(description);
-        const safeName = escapeGraphQL(name);
-        const safeNamespace = escapeGraphQL(ns);
-        const safeKey = escapeGraphQL(actualKey);
         
         const mutation = `#graphql
             mutation {
                 metafieldDefinitionUpdate(definition: {
                     ownerType: ${ownerType}
-                    namespace: "${safeNamespace}"
-                    key: "${safeKey}"
-                    name: "${safeName}"
-                    description: "${safeDescription}"
+                    namespace: "${escapeGraphQL(ns)}"
+                    key: "${escapeGraphQL(actualKey)}"
+                    name: "${escapeGraphQL(name)}"
+                    description: "${escapeGraphQL(description)}"
                 }) {
-                    userErrors {
-                        message
-                    }
+                    userErrors { message }
                 }
             }
         `;
@@ -299,39 +295,138 @@ export const action = async ({ request }: any) => {
         const res = await admin.graphql(mutation);
         const json = await res.json();
         const errors = json.data?.metafieldDefinitionUpdate?.userErrors;
-        if (errors && errors.length > 0) {
-            throw new Error(errors[0].message);
-        }
+        if (errors && errors.length > 0) throw new Error(errors[0].message);
         return { ok: true };
     }
+    
+    if (actionType === "scan_code") {
+        try {
+            // 1. Get the main theme
+            const themesQuery = `#graphql
+                query {
+                    themes(first: 1, roles: MAIN) {
+                        nodes {
+                            id
+                            name
+                        }
+                    }
+                }
+            `;
+            
+            const themesRes = await admin.graphql(themesQuery);
+            const themesJson = await themesRes.json();
+            const mainTheme = themesJson.data?.themes?.nodes?.[0];
+            
+            if (!mainTheme) {
+                return { ok: false, error: "No main theme found" };
+            }
+            
+            // 2. Get theme files (assets)
+            const themeId = mainTheme.id.split('/').pop();
+            const assetsQuery = `#graphql
+                query {
+                    theme(id: "${mainTheme.id}") {
+                        files(first: 250) {
+                            nodes {
+                                filename
+                                ... on OnlineStoreThemeFileBodyText {
+                                    body {
+                                        content
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            `;
+            
+            const assetsRes = await admin.graphql(assetsQuery);
+            const assetsJson = await assetsRes.json();
+            const files = assetsJson.data?.theme?.files?.nodes || [];
+            
+            // 3. Scan files for metafield references
+            const foundKeys = new Set<string>();
+            
+            // Patterns to search for metafield references
+            const patterns = [
+                /metafields\.([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)/g,  // product.metafields.namespace.key
+                /metafield\.([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)/g,   // metafield.namespace.key
+                /"([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_-]+)"/g,             // "namespace.key" in JSON
+            ];
+            
+            for (const file of files) {
+                // Only scan relevant file types
+                const filename = file.filename?.toLowerCase() || '';
+                const isRelevant = 
+                    filename.endsWith('.liquid') || 
+                    filename.endsWith('.json') ||
+                    filename.includes('layout/') ||
+                    filename.includes('templates/') ||
+                    filename.includes('sections/') ||
+                    filename.includes('snippets/');
+                
+                if (!isRelevant || !file.body?.content) continue;
+                
+                const content = file.body.content;
+                
+                // Search for all patterns
+                for (const pattern of patterns) {
+                    let match;
+                    while ((match = pattern.exec(content)) !== null) {
+                        if (match[1] && match[2]) {
+                            foundKeys.add(`${match[1]}.${match[2]}`);
+                        }
+                    }
+                }
+            }
+            
+            return { 
+                ok: true, 
+                foundKeys: Array.from(foundKeys),
+                scannedFiles: files.length,
+                themeName: mainTheme.name
+            };
+            
+        } catch (error: any) {
+            console.error("Scan error:", error);
+            return { ok: false, error: error.message };
+        }
+    }
+    
     return null;
 };
 
-// --- COMPOSANT FRONTEND ---
+// --- FRONTEND ---
 export default function AppMf() {
     const { shop, shopDomain, mfData, totalCount, moCount = 0 } = useLoaderData<any>();
     const submit = useSubmit();
+    const fetcher = useFetcher();
     
-    // State
     const [devMode, setDevMode] = useState(false);
     const [search, setSearch] = useState("");
     const [modalData, setModalData] = useState<any>(null);
-    const [sortBy, setSortBy] = useState<'name' | 'description' | 'fullKey' | 'type' | 'status' | 'count' | null>(null);
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+    const [editDescription, setEditDescription] = useState("");
+    const [editName, setEditName] = useState("");
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+    const [selectedKeys, setSelectedKeys] = useState<Set<React.Key>>(new Set([]));
     const initializedRef = useRef(false);
-    const initialSectionsStateRef = useRef<Record<string, boolean>>({});
 
-    // Fonction de normalisation (comme dans global.js)
+    const handleBulkDelete = () => {
+        const idsToDelete = Array.from(selectedKeys).map(k => String(k));
+        if (confirm(`Supprimer ${idsToDelete.length} champs ?`)) {
+            idsToDelete.forEach(id => {
+                submit({ action: 'delete_item', id }, { method: 'post' });
+            });
+            setSelectedKeys(new Set([]));
+        }
+    };
+
     const norm = (s: string) => {
         return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
     };
 
-    // Initialisation Dev Mode et première section ouverte
     useEffect(() => { 
         setDevMode(localStorage.getItem('mm_dev_mode') === 'true');
-        
-        // Ouvrir la première section qui a des données (une seule fois au chargement)
         if(!initializedRef.current && mfData) {
             const sections = ['p', 'v', 'c', 'cl', 'o', 'do_', 'co', 'loc', 'm', 'pg', 'b', 'art', 's'];
             const sectionKeys = ['Produits', 'Variantes', 'Collections', 'Clients', 'Commandes', 'Commandes Provisoires', 'Entreprises B2B', 'Emplacements (Stock)', 'Marchés', 'Pages', 'Blogs', 'Articles', 'Boutique'];
@@ -345,75 +440,14 @@ export default function AppMf() {
                 }
             }
             setOpenSections(initialState);
-            initialSectionsStateRef.current = { ...initialState };
         }
     }, [mfData]);
-
-    // Restaurer l'état initial des sections quand la recherche est vide
-    useEffect(() => {
-        if(!search && Object.keys(initialSectionsStateRef.current).length > 0) {
-            setOpenSections({ ...initialSectionsStateRef.current });
-        }
-    }, [search]);
     
-    const toggleDev = () => {
-        const newVal = !devMode;
-        setDevMode(newVal);
-        localStorage.setItem('mm_dev_mode', newVal ? 'true' : 'false');
+    const toggleDev = (val: boolean) => {
+        setDevMode(val);
+        localStorage.setItem('mm_dev_mode', val ? 'true' : 'false');
     };
 
-    // Actions
-    const handleUpload = (id: string, file: File) => {
-        const reader = new FileReader();
-        reader.onload = (e) => submit({ action: "upload_image", id, image: e.target?.result as string }, { method: "post" });
-        reader.readAsDataURL(file);
-    };
-
-    // Fonction de tri
-    const sortData = (data: any[]) => {
-        if (!sortBy) return data;
-        return [...data].sort((a, b) => {
-            let aVal: string | number = '';
-            let bVal: string | number = '';
-            if (sortBy === 'name') {
-                aVal = (a.name || '').toLowerCase();
-                bVal = (b.name || '').toLowerCase();
-            } else if (sortBy === 'description') {
-                aVal = (a.description || '').toLowerCase();
-                bVal = (b.description || '').toLowerCase();
-            } else if (sortBy === 'fullKey') {
-                aVal = (a.fullKey || '').toLowerCase();
-                bVal = (b.fullKey || '').toLowerCase();
-            } else if (sortBy === 'type') {
-                aVal = (a.typeDisplay || '').toLowerCase();
-                bVal = (b.typeDisplay || '').toLowerCase();
-            } else if (sortBy === 'status') {
-                aVal = (a.status || '').toLowerCase();
-                bVal = (b.status || '').toLowerCase();
-            } else if (sortBy === 'count') {
-                aVal = a.count || 0;
-                bVal = b.count || 0;
-            }
-            let comparison: number;
-            if (typeof aVal === 'number' && typeof bVal === 'number') {
-                comparison = aVal - bVal;
-            } else {
-                comparison = String(aVal).localeCompare(String(bVal));
-            }
-            return sortOrder === 'asc' ? comparison : -comparison;
-        });
-    };
-
-    const handleSort = (field: 'name' | 'description' | 'fullKey' | 'type' | 'status' | 'count') => {
-        if (sortBy === field) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortBy(field);
-            setSortOrder('asc');
-        }
-    };
-
-    // Fonction pour construire l'URL Shopify (comme dans global.js)
     const getShopifyUrl = (ownerType: string, id: string) => {
         const map: Record<string, string> = {
             'PRODUCT': 'product', 'PRODUCTVARIANT': 'variant', 'COLLECTION': 'collection',
@@ -427,16 +461,85 @@ export default function AppMf() {
         return `https://admin.shopify.com/store/${shopName}/settings/custom_data/${resource}/metafields/${cleanId}`;
     };
 
-    // Fonction pour générer une description depuis une clé
     const generateDescFromKey = (key: string) => {
         let clean = key.split('.').pop() || '';
         clean = clean.replace(/_/g, ' ');
         return clean.charAt(0).toUpperCase() + clean.slice(1);
     };
 
-    // Fonction pour auto-générer toutes les descriptions manquantes
-    const autoGenerateAllMissing = async () => {
-        // Collecter tous les champs méta sans description
+    const [autoGenModalOpen, setAutoGenModalOpen] = useState(false);
+    const [autoGenCount, setAutoGenCount] = useState(0);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [generationComplete, setGenerationComplete] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
+    const [scannedKeys, setScannedKeys] = useState<Set<string>>(new Set());
+    const [lastScanInfo, setLastScanInfo] = useState<{files: number, theme: string} | null>(null);
+
+    // Load scan results from localStorage on mount
+    useEffect(() => {
+        const stored = localStorage.getItem('mm_scan_results');
+        if (stored) {
+            try {
+                const data = JSON.parse(stored);
+                setScannedKeys(new Set(data.keys || []));
+                setLastScanInfo(data.info || null);
+            } catch (e) {
+                console.error('Failed to load scan results:', e);
+            }
+        }
+    }, []);
+
+    // Handle fetcher response for scan
+    useEffect(() => {
+        if (fetcher.data && fetcher.state === 'idle') {
+            const result = fetcher.data;
+            if (result.ok && result.foundKeys) {
+                const keysSet = new Set(result.foundKeys);
+                setScannedKeys(keysSet);
+                setLastScanInfo({
+                    files: result.scannedFiles,
+                    theme: result.themeName
+                });
+                
+                // Store in localStorage
+                localStorage.setItem('mm_scan_results', JSON.stringify({
+                    keys: result.foundKeys,
+                    info: {
+                        files: result.scannedFiles,
+                        theme: result.themeName
+                    },
+                    timestamp: new Date().toISOString()
+                }));
+                
+                setIsScanning(false);
+            } else if (result.error) {
+                console.error('Scan failed:', result.error);
+                alert(`Erreur lors du scan: ${result.error || 'Erreur inconnue'}`);
+                setIsScanning(false);
+            }
+        }
+    }, [fetcher.data, fetcher.state]);
+
+    const checkAutoGenerate = () => {
+        let count = 0;
+        Object.values(mfData).forEach((sectionData: any) => {
+            if(Array.isArray(sectionData)) {
+                sectionData.forEach((d: any) => {
+                    if(!d.description || d.description === '' || d.description === '-') {
+                        count++;
+                    }
+                });
+            }
+        });
+        
+        setAutoGenCount(count);
+        setIsGenerating(false);
+        setGenerationComplete(false);
+        setAutoGenModalOpen(true);
+    };
+
+    const confirmAutoGenerate = async () => {
+        setIsGenerating(true);
         const allData: any[] = [];
         Object.values(mfData).forEach((sectionData: any) => {
             if(Array.isArray(sectionData)) {
@@ -448,147 +551,288 @@ export default function AppMf() {
             }
         });
 
-        if(allData.length === 0) {
-            alert("Tout est déjà rempli !");
-            return;
-        }
-
-        if(!confirm(`Générer ${allData.length} descriptions manquantes ?`)) return;
-
-        // Traiter chaque élément
         for(let i = 0; i < allData.length; i++) {
             const mf = allData[i];
             const newDesc = generateDescFromKey(mf.fullKey);
             await submit({
-                action: 'update_desc',
-                id: mf.id,
-                name: mf.name,
-                description: newDesc,
-                key: mf.fullKey,
-                ownerType: mf.ownerType
+                action: 'update_desc', id: mf.id, name: mf.name, description: newDesc, key: mf.fullKey, ownerType: mf.ownerType
             }, { method: 'post' });
         }
-
-        alert(`Terminé ! ${allData.length} descriptions générées. Rechargement...`);
-        setTimeout(() => window.location.reload(), 1000);
+        
+        setIsGenerating(false);
+        setGenerationComplete(true);
+        
+        // Petit délai pour lire le succès avant reload
+        setTimeout(() => window.location.reload(), 1500);
     };
 
-    // Table Row Component
-    const Row = ({ d }: any) => {
-        // Le filtrage est fait dans Section avec filteredData, pas besoin de filtrer ici
+    const handleScanCode = () => {
+        setIsScanning(true);
+        const formData = new FormData();
+        formData.append('action', 'scan_code');
+        fetcher.submit(formData, { method: 'post' });
+    };
 
-        const highlight = (txt: string) => {
-            if(!search || !txt) return txt;
-            const escTerm = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const regex = new RegExp(`(${escTerm})`, 'gi');
-            const parts = txt.split(regex);
-            return parts.map((p,i) => norm(p) === norm(search) ? <span key={i} className="highlight">{p}</span> : p);
-        };
-
-        // Construire le lien vers Shopify admin
-        const shopifyLink = getShopifyUrl(d.ownerType, d.id);
-
-        return (
-            <tr>
-                <td data-search-area="true">
-                    <div style={{fontWeight:'bold'}}>{highlight(d.name)}</div>
-                    <div style={{fontSize:'12px', color:'#666', display:'flex', alignItems:'center'}}>
-                        {highlight(d.description || '-')}
-                        <span className="edit-icon" onClick={(e)=>{e.stopPropagation(); setModalData(d)}}>✎</span>
-                    </div>
-                </td>
-                {/* MÉMO, ASSIGN., LIEN ensemble */}
-                <td className="col-img" data-search-area="true">
-                    {d.img ? (
-                        <div className="img-box">
-                            <img src={d.img} alt="" />
-                            <span className="del-img" onClick={(e)=>{e.stopPropagation(); if(confirm('Supprimer image?')) submit({action:'delete_image', id:d.id}, {method:'post'})}}>❌</span>
+    const columns = [
+        { key: "name", label: "NOM DU METAFIELD", className: "mf-col--name" },
+        ...(devMode ? [
+            { 
+                key: "fullKey", 
+                label: (
+                    <div className="relative overflow-visible">
+                        <div className="absolute -top-7 -left-3 bg-[#E4E4E7] text-default-500 text-[10px] font-medium px-3 py-1 rounded-t-lg flex items-center gap-1 whitespace-nowrap z-10">
+                            <span>&lt;/&gt;</span> Dev Mode
                         </div>
-                    ) : (
-                        <label style={{cursor:'pointer', fontSize:'20px'}}>📷<input type="file" hidden accept="image/*" onChange={(e)=>e.target.files && handleUpload(d.id, e.target.files[0])} /></label>
-                    )}
-                </td>
-                <td className="col-vol" data-search-area="true"><strong style={{color:d.count>0?'#008060':'#ccc'}}>{highlight(d.count.toString())}</strong></td>
-                <td className="col-lien">
-                    <a href={shopifyLink} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none', fontSize:'18px'}} title="Ouvrir dans Shopify Admin">🔗</a>
-                </td>
-                
-                {/* Clé Tech, Type, DIAG, CODE */}
-                <td className="col-tech dev-zone" data-search-area="true">{highlight(d.fullKey)}</td>
-                <td className="col-type" data-search-area="true"><span className="type-pill">{highlight(d.typeDisplay)}</span></td>
-                <td className="dev-zone" data-search-area="true" style={{fontSize:'11px', whiteSpace:'pre-line', lineHeight:'1.4'}}>
-                    {d.status.split('\n').map((line: string, i: number) => {
-                        const isWarning = line.includes('🗑️') || line.includes('App Désinstallée');
-                        const isError = line.includes('Namespace:');
-                        return (
-                            <div key={i} style={{color: isWarning ? '#d32f2f' : isError ? '#666' : 'inherit', fontWeight: isWarning ? 'bold' : 'normal'}}>
-                                {highlight(line)}
-                            </div>
-                        );
-                    })}
-                </td>
-                <td className="col-code" data-search-area="true" style={{fontSize:'11px', color:'#999'}}>Non</td>
-                
-                <td className="col-del"><button className="btn-del" onClick={()=>{if(confirm('Supprimer ?')) submit({action:'delete_item', id:d.id}, {method:'post'})}}>🗑️</button></td>
-            </tr>
-        );
+                        CLÉ
+                    </div>
+                ),
+                className: "mf-col--key mf-table__header--dev"
+            },
+            { key: "type", label: "STRUCTURE", className: "mf-col--type mf-table__header--dev" },
+            { key: "status", label: "DIAG", className: "mf-col--status mf-table__header--dev" },
+            { key: "code_usage", label: "CODE", className: "mf-col--code mf-table__header--dev" }
+        ] : []),
+        { key: "count", label: "ASSING.", className: "mf-col--count" },
+        { key: "actions", label: "LIEN", className: "mf-col--actions" },
+        { key: "menu", label: " ", className: "mf-col--menu" }
+    ];
+
+    const renderCell = (item: any, columnKey: React.Key) => {
+        const shopifyLink = getShopifyUrl(item.ownerType, item.id);
+        const isDevCol = ["fullKey", "type", "status", "code_usage"].includes(columnKey as string);
+        
+        // Helper for highlighting
+        const highlightText = (text: string, highlight: string) => {
+            if (!highlight || !text) return text;
+            try {
+                const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(${escapeRegExp(highlight)})`, 'gi');
+                return text.split(regex).map((part, i) => 
+                    i % 2 === 1 ? <span key={i} className="text-[#E11D48] font-semibold">{part}</span> : part
+                );
+            } catch (e) { return text; }
+        };
+        
+        const content = (() => {
+            switch (columnKey) {
+                case "name":
+                    return (
+                        <div className="mf-cell mf-cell--multi">
+                            <span className="mf-text--title">{highlightText(item.name, search)}</span>
+                            {item.description && (
+                                <span className="mf-text--desc">{highlightText(item.description, search)}</span>
+                            )}
+                        </div>
+                    );
+                case "fullKey":
+                    return (
+                        <div className="mf-cell mf-cell--start">
+                            <span className="mf-text--key" title={item.fullKey}>
+                                {highlightText(item.fullKey, search)}
+                            </span>
+                        </div>
+                    );
+                case "type":
+                    return (
+                        <div className="mf-cell mf-cell--start">
+                            <span className="mf-chip">{highlightText(item.typeDisplay, search)}</span>
+                        </div>
+                    );
+                case "status":
+                    return (
+                        <div className="mf-cell mf-cell--start">
+                            <span className="mf-text--status">{highlightText(item.status, search)}</span>
+                        </div>
+                    );
+                case "code_usage": {
+                    const isFound = scannedKeys.has(item.fullKey);
+                    const displayText = isFound ? 'Oui' : 'Non';
+                    return (
+                        <div className="mf-cell mf-cell--center">
+                            <span className={`px-2 py-0.5 rounded text-[12px] font-medium ${isFound ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                                {displayText}
+                            </span>
+                        </div>
+                    );
+                }
+                case "count":
+                    return (
+                        <div className="mf-cell mf-cell--center">
+                            <div className="mf-badge--count">{item.count}</div>
+                        </div>
+                    );
+                case "actions":
+                    return (
+                        <div className="mf-cell mf-cell--center">
+                            <Tooltip content="Ouvrir dans Shopify Admin">
+                                <a
+                                    href={shopifyLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mf-action-link"
+                                >
+                                    <Icons.Link />
+                                </a>
+                            </Tooltip>
+                        </div>
+                    );
+                case "menu":
+                    return (
+                        <div className="mf-cell mf-cell--center">
+                            <Dropdown 
+                                placement="bottom-end"
+                                classNames={{
+                                    content: "p-0 border-none shadow-none bg-transparent min-w-0 w-auto"
+                                }}
+                            >
+                                <DropdownTrigger>
+                                    <Button isIconOnly size="sm" variant="light" className="text-default-400 min-w-8 w-8 h-8">
+                                        <Icons.VerticalDots />
+                                    </Button>
+                                </DropdownTrigger>
+                                <DropdownMenu 
+                                    aria-label="Actions"
+                                    className="w-[150px] p-[14px_16px] flex flex-col gap-[2px] rounded-[14px] border border-[#D4D4D8] bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.10),0_2px_4px_-2px_rgba(0,0,0,0.10)]"
+                                    itemClasses={{
+                                        base: "rounded-[6px] px-2 py-1.5 h-auto min-h-0 bg-transparent transition-colors data-[hover=true]:bg-[#F4F4F5]",
+                                        title: "font-inter text-[14px] font-normal leading-[20px]"
+                                    }}
+                                >
+                                    <DropdownItem 
+                                        key="edit" 
+                                        startContent={<Icons.Edit />}
+                                        className="text-[#71717A] data-[hover=true]:text-[#18181B]"
+                                        onPress={() => {
+                                            setModalData(item);
+                                            setEditName(item.name || '');
+                                            setEditDescription(item.description || '');
+                                        }}
+                                    >
+                                        Editer
+                                    </DropdownItem>
+                                    <DropdownItem 
+                                        key="delete" 
+                                        startContent={<Icons.Delete />}
+                                        className="text-[#C20E4D] data-[hover=true]:bg-[#FFF1F2] data-[hover=true]:text-[#BE123C]"
+                                        onPress={() => {
+                                            if(confirm('Supprimer ce champ méta ?')) {
+                                                submit({action:'delete_item', id:item.id}, {method:'post'});
+                                            }
+                                        }}
+                                    >
+                                        Supprimer
+                                    </DropdownItem>
+                                </DropdownMenu>
+                            </Dropdown>
+                        </div>
+                    );
+                default:
+                    return null;
+            }
+        })();
+
+        if (isDevCol && devMode) {
+            return (
+                <div className="mf-cell--dev">
+                    {content}
+                </div>
+            );
+        }
+        
+        return content;
     };
 
     const Section = ({ title, icon, data }: any) => {
-        // Utiliser l'état global pour garder les sections ouvertes même lors des changements
         const isOpen = openSections[title] || false;
         
-        // Auto open on search (sans fermer les autres) - vérifie toutes les colonnes (comme global.js)
-        useEffect(() => { 
-            if(search) {
-                const filter = norm(search);
-                const hasMatch = data.some((d:any) => {
-                    // Recherche dans les colonnes visibles selon le dev mode
-                    let combinedText = "";
-                    
-                    // Colonnes toujours visibles
-                    combinedText += (d.name || '') + " ";
-                    combinedText += (d.description || '') + " ";
-                    combinedText += (d.count || 0).toString() + " ";
-                    
-                    // Colonnes dev-zone seulement si dev mode activé
-                    if(devMode) {
-                        combinedText += (d.fullKey || '') + " ";
-                        combinedText += (d.typeDisplay || '') + " ";
-                        combinedText += (d.status || '') + " ";
-                    }
-                    
-                    return norm(combinedText).includes(filter);
-                });
-                if(hasMatch && !openSections[title]) {
-                    setOpenSections(prev => ({ ...prev, [title]: true }));
-                }
-            }
-        }, [search, title, data, devMode]);
-        
         const toggleSection = () => {
-            const newState = { ...openSections, [title]: !openSections[title] };
-            setOpenSections(newState);
-            // Sauvegarder l'état seulement si pas de recherche active
-            if(!search) {
-                initialSectionsStateRef.current = { ...newState };
-            }
+            setOpenSections(prev => ({ ...prev, [title]: !prev[title] }));
         };
         
-        // Filtrer les données (comme global.js - exclut dev-zone si pas en dev mode)
-        const filteredData = data.filter((d:any) => {
-            if(!search) return true;
-            
-            const filter = norm(search);
+        // No filter here if search is active (layout changes), but if search is empty, filter is no-op
+        const filteredData = data; 
+        
+        return (
+            <div className="mf-section">
+                <div 
+                    className={`mf-section__header ${isOpen ? 'mf-section__header--open' : 'mf-section__header--closed'}`}
+                    onClick={toggleSection}
+                >
+                    <div className="mf-section__title-group">
+                        <span className="mf-section__icon">{icon}</span>
+                        <span className="mf-section__title">{title}</span>
+                        {filteredData.length > 0 && (
+                            <span className="mf-section__count">{filteredData.length}</span>
+                        )}
+                    </div>
+                    <span className={`mf-section__chevron ${isOpen ? 'mf-section__chevron--open' : ''}`}>
+                        <Icons.ChevronRight />
+                    </span>
+                </div>
+                {isOpen && (
+                    <div>
+                        {filteredData.length === 0 ? (
+                            <div className="mf-empty">
+                                Aucun champ méta trouvé pour cette section.
+                            </div>
+                        ) : (
+                            <Table 
+                                aria-label={`Table ${title}`}
+                                className="mf-table"
+                                removeWrapper
+                                selectionMode="multiple"
+                                selectedKeys={selectedKeys}
+                                onSelectionChange={setSelectedKeys as any}
+                                classNames={{
+                                    wrapper: "mf-table__wrapper",
+                                    th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`,
+                                    td: "mf-table__cell",
+                                    base: "mf-table__base",
+                                    tr: "mf-table__row"
+                                }}
+                            >
+                                <TableHeader columns={columns}>
+                                    {(column: any) => (
+                                        <TableColumn 
+                                            key={column.key}
+                                            align={column.key === "count" || column.key === "actions" || column.key === "menu" ? "center" : "start"}
+                                            className={column.className}
+                                        >
+                                            {column.label}
+                                        </TableColumn>
+                                    )}
+                                </TableHeader>
+                                <TableBody items={filteredData} emptyContent={"Aucun champ."}>
+                                    {(item: any) => (
+                                        <TableRow key={item.id}>
+                                            {(columnKey) => <TableCell>{renderCell(item, columnKey)}</TableCell>}
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Calculate search results
+    const getSearchResults = () => {
+        if (!search) return [];
+        const filter = norm(search);
+        let allItems: any[] = [];
+        Object.values(mfData).forEach((arr: any) => {
+            if(Array.isArray(arr)) allItems = [...allItems, ...arr];
+        });
+        
+        return allItems.filter((d:any) => {
             let combinedText = "";
-            
-            // Colonnes toujours visibles
             combinedText += (d.name || '') + " ";
             combinedText += (d.description || '') + " ";
             combinedText += (d.count || 0).toString() + " ";
             
-            // Colonnes dev-zone seulement si dev mode activé
-            if(devMode) {
+            if (devMode) {
                 combinedText += (d.fullKey || '') + " ";
                 combinedText += (d.typeDisplay || '') + " ";
                 combinedText += (d.status || '') + " ";
@@ -596,159 +840,280 @@ export default function AppMf() {
             
             return norm(combinedText).includes(filter);
         });
-        
-        const sortedData = sortData(filteredData);
-        
-        // Hide section if search has no results inside
-        if(search && filteredData.length === 0) return null;
-
-        return (
-            <div className="section-wrapper">
-                <div className={`accordion ${isOpen?'active-acc':''}`} onClick={toggleSection}>
-                    <div>{icon} <strong>{title}</strong> <span className="count-bubble">{filteredData.length}</span></div>
-                    <span>{isOpen ? '▼' : '►'}</span>
-                </div>
-                {isOpen && (
-                    filteredData.length === 0 ? (
-                        <div style={{padding: '20px', textAlign: 'center', color: '#999', fontStyle: 'italic'}}>
-                            Aucun champ méta trouvé pour cette section.
-                        </div>
-                    ) : (
-                        <table className="main-table">
-                            <thead>
-                                <tr>
-                                    <th className="col-nom-desc sortable">
-                                        <div 
-                                            onClick={(e)=>{
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                handleSort('name');
-                                            }} 
-                                            style={{cursor: 'pointer', userSelect: 'none', display: 'inline-block', width: '100%'}}
-                                        >
-                                            Nom & Desc
-                                            {sortBy === 'name' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
-                                        </div>
-                                    </th>
-                                    <th className="col-img" align="center">MÉMO</th>
-                                    <th className="col-vol sortable" align="center">
-                                        <div onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleSort('count');}} style={{cursor: 'pointer', userSelect: 'none', display: 'inline-block', width: '100%'}}>
-                                            ASSIGN.
-                                            {sortBy === 'count' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
-                                        </div>
-                                    </th>
-                                    <th className="col-lien" align="center">LIEN</th>
-                                    <th className="col-tech sortable" align="center">
-                                        <div onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleSort('fullKey');}} style={{cursor: 'pointer', userSelect: 'none', display: 'inline-block', width: '100%'}}>
-                                            Clé Tech
-                                            {sortBy === 'fullKey' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
-                                        </div>
-                                    </th>
-                                    <th className="col-type sortable" align="center">
-                                        <div onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleSort('type');}} style={{cursor: 'pointer', userSelect: 'none', display: 'inline-block', width: '100%'}}>
-                                            Type
-                                            {sortBy === 'type' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
-                                        </div>
-                                    </th>
-                                    <th className="dev-zone sortable" align="center">
-                                        <div onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleSort('status');}} style={{cursor: 'pointer', userSelect: 'none', display: 'inline-block', width: '100%'}}>
-                                            DIAG
-                                            {sortBy === 'status' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
-                                        </div>
-                                    </th>
-                                    <th className="col-code sortable" align="center">
-                                        <div onClick={(e)=>{e.preventDefault(); e.stopPropagation();}} style={{cursor: 'default', userSelect: 'none', display: 'inline-block', width: '100%'}}>
-                                            CODE
-                                        </div>
-                                    </th>
-                                    <th className="col-del">🗑️</th>
-                                </tr>
-                            </thead>
-                            <tbody>{sortedData.map((d:any) => <Row key={d.id} d={d} />)}</tbody>
-                        </table>
-                    )
-                )}
-            </div>
-        );
     };
 
+    const searchResults = getSearchResults();
+
     return (
-        <div className={devMode ? "dev-mode" : ""}>
-            <style>{STYLES}</style>
-            <div className="mm-container">
-                <header className="mm-header">
-                    <h1 style={{margin:0}}>MM Gestion - Champs Méta (MF)</h1>
-                    <div style={{display:'flex', gap:'15px', alignItems:'center'}}>
-                        <label style={{cursor:'pointer', display:'flex', alignItems:'center', gap:'5px', fontSize:'12px'}}>
-                            <input type="checkbox" checked={devMode} onChange={toggleDev} /> 🛠️ Mode Dév
-                        </label>
-                        <button 
-                            onClick={autoGenerateAllMissing}
-                            style={{
-                                background:'#008060', 
-                                color:'white', 
-                                border:'none', 
-                                padding:'8px 15px', 
-                                borderRadius:'6px', 
-                                cursor:'pointer', 
-                                fontWeight:'bold', 
-                                fontSize:'12px'
-                            }}
+        <div className="min-h-screen bg-white">
+            <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+                <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]">
+                    <AppBrand />
+                    <div className="flex gap-3 items-center">
+                        <DevModeToggle isChecked={devMode} onChange={toggleDev} />
+                        <BasilicButton 
+                            onPress={handleScanCode}
+                            variant="flat"
+                            className="bg-white border border-default-200 text-default-700"
+                            isLoading={isScanning}
+                            isDisabled={isScanning}
+                            icon={
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                                    <path d="M3 3v5h5"></path>
+                                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+                                    <path d="M16 16h5v5"></path>
+                                </svg>
+                            }
                         >
-                            ✨ Auto-Générer Tout (Manquants)
-                        </button>
+                            {isScanning ? 'Scan en cours...' : 'Scan Code'}
+                        </BasilicButton>
+                        <BasilicButton 
+                            onPress={checkAutoGenerate}
+                            icon={
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+                                </svg>
+                            }
+                        >
+                            Générer descriptions manquantes
+                        </BasilicButton>
                     </div>
-                </header>
-
-                <input className="search-box" placeholder="🔍 Rechercher un champ, une clé..." value={search} onChange={e=>setSearch(e.target.value)} />
-
-                {/* VISUAL TABS (Links to pages) */}
-                <div className="tabs">
-                    <Link to="/app/mf" className="tab-link active">Champs Méta (MF) <span className="tab-badge">{totalCount}</span></Link>
-                    <Link to="/app/mo" className="tab-link">Objets Méta (MO) <span className="tab-badge">{moCount || 0}</span></Link>
                 </div>
 
-                <div style={{display:'flex', flexDirection:'column'}}>
-                    <Section title="Produits" icon="🛍️" data={mfData.p} />
-                    <Section title="Variantes" icon="👕" data={mfData.v} />
-                    <Section title="Collections" icon="📂" data={mfData.c} />
-                    <Section title="Clients" icon="👥" data={mfData.cl} />
-                    <Section title="Commandes" icon="📦" data={mfData.o} />
-                    <Section title="Commandes Provisoires" icon="📝" data={mfData.do_} />
-                    <Section title="Entreprises B2B" icon="🏢" data={mfData.co} />
-                    <Section title="Emplacements (Stock)" icon="📍" data={mfData.loc} />
-                    <Section title="Marchés" icon="🌍" data={mfData.m} />
-                    <Section title="Pages" icon="📄" data={mfData.pg} />
-                    <Section title="Blogs" icon="📰" data={mfData.b} />
-                    <Section title="Articles" icon="📰" data={mfData.art} />
-                    <Section title="Boutique" icon="🏪" data={mfData.s} />
+                <div className="flex items-center justify-between w-full">
+                    <NavigationTabs activePath="/app/mf" counts={{ mf: totalCount, mo: moCount }} />
+                    <div className="flex-shrink-0" style={{ width: '320px' }}>
+                        <BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" />
+                    </div>
                 </div>
+
+                {search ? (
+                    <div className="mf-section">
+                         <div className="mf-section__header mf-section__header--open cursor-default hover:!bg-[#FAFAFA]" style={{ pointerEvents: 'none' }}>
+                            <div className="mf-section__title-group">
+                                <span className="mf-section__icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                </span>
+                                <span className="mf-section__title">Résultats de recherche</span>
+                                <span className="mf-section__count">{searchResults.length}</span>
+                            </div>
+                        </div>
+                        <div>
+                            <Table 
+                                aria-label="Tableau de recherche"
+                                className="mf-table"
+                                removeWrapper
+                                selectionMode="multiple"
+                                selectedKeys={selectedKeys}
+                                onSelectionChange={setSelectedKeys as any}
+                                classNames={{
+                                    wrapper: "mf-table__wrapper",
+                                    th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`,
+                                    td: "mf-table__cell",
+                                    base: "mf-table__base",
+                                    tr: "mf-table__row"
+                                }}
+                            >
+                                <TableHeader columns={columns}>
+                                    {(column: any) => (
+                                        <TableColumn 
+                                            key={column.key}
+                                            align={column.key === "count" || column.key === "actions" || column.key === "menu" ? "center" : "start"}
+                                            className={column.className}
+                                        >
+                                            {column.label}
+                                        </TableColumn>
+                                    )}
+                                </TableHeader>
+                                <TableBody items={searchResults} emptyContent={"Aucun résultat trouvé."}>
+                                    {(item: any) => (
+                                        <TableRow key={item.id}>
+                                            {(columnKey) => <TableCell>{renderCell(item, columnKey)}</TableCell>}
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        <Section title="Produits" icon={<Icons.Products/>} data={mfData.p} />
+                        <Section title="Variantes" icon={<Icons.Variants/>} data={mfData.v} />
+                        <Section title="Collections" icon={<Icons.Collections/>} data={mfData.c} />
+                        <Section title="Clients" icon={<Icons.Clients/>} data={mfData.cl} />
+                        <Section title="Commandes" icon={<Icons.Orders/>} data={mfData.o} />
+                        <Section title="Commandes Provisoires" icon={<Icons.Orders/>} data={mfData.do_} />
+                        <Section title="Entreprises B2B" icon={<Icons.Companies/>} data={mfData.co} />
+                        <Section title="Emplacements (Stock)" icon={<Icons.Locations/>} data={mfData.loc} />
+                        <Section title="Marchés" icon={<Icons.Markets/>} data={mfData.m} />
+                        <Section title="Pages" icon={<Icons.Generic/>} data={mfData.pg} />
+                        <Section title="Blogs" icon={<Icons.Generic/>} data={mfData.b} />
+                        <Section title="Articles" icon={<Icons.Generic/>} data={mfData.art} />
+                        <Section title="Boutique" icon={<Icons.Generic/>} data={mfData.s} />
+                    </div>
+                )}
+
+                {/* Global Selection Bar */}
+                {selectedKeys.size > 0 && (
+                    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+                        <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-[0px_8px_16px_rgba(0,0,0,0.25)] ring-1 ring-white/10">
+                            <div className="flex items-center gap-3">
+                                <span className="text-[14px] font-medium text-white">{(selectedKeys as any) === "all" ? "Tous" : selectedKeys.size} sélectionnés</span>
+                                <button 
+                                    onClick={() => setSelectedKeys(new Set([]))}
+                                    className="text-[#A1A1AA] hover:text-white transition-colors"
+                                >
+                                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <g opacity="0.8">
+                                        <path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/>
+                                        <path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </g>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div className="h-6 w-[1px] bg-[#3F3F46]"></div>
+                            <Button 
+                                onPress={handleBulkDelete}
+                                className="bg-[#F43F5E] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#E11D48] transition-colors gap-2"
+                                startContent={<Icons.Delete width={18} height={18} />}
+                            >
+                                supprimer
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
 
-            {/* EDIT MODAL */}
-            {modalData && (
-                <div className="modal-overlay" onClick={()=>setModalData(null)}>
-                    <div className="modal-box" onClick={e=>e.stopPropagation()}>
-                        <h3>Modifier la description</h3>
-                        <p><strong>{modalData.name}</strong> <code style={{background:'#eee'}}>{modalData.fullKey}</code></p>
-                        <textarea id="desc-input" defaultValue={modalData.description} style={{width:'100%', height:80, padding:10, marginBottom:10}} />
-                        <div style={{display:'flex', justifyContent:'space-between'}}>
-                            <button onClick={()=>setModalData(null)} style={{padding:'8px 15px', border:'none', cursor:'pointer'}}>Annuler</button>
-                            <button onClick={()=>{
+            <BasilicModal
+                isOpen={autoGenModalOpen}
+                onClose={() => !isGenerating && setAutoGenModalOpen(false)}
+                title={generationComplete ? "Succès" : "Génération automatique"}
+                footer={
+                    generationComplete ? null : (
+                        autoGenCount > 0 ? (
+                            <>
+                                <Button
+                                    variant="light"
+                                    onPress={() => setAutoGenModalOpen(false)}
+                                    isDisabled={isGenerating}
+                                    className="bg-[#F4F4F5] hover:bg-[#E4E4E7] text-[#71717A] hover:text-[#18181B] font-medium transition-colors h-10 px-4 min-w-0 rounded-[12px]"
+                                    disableRipple
+                                >
+                                    Annuler
+                                </Button>
+                                <BasilicButton
+                                    onPress={confirmAutoGenerate}
+                                    isLoading={isGenerating}
+                                    className="min-w-[100px]"
+                                >
+                                    {isGenerating ? "Génération..." : "Confirmer"}
+                                </BasilicButton>
+                            </>
+                        ) : (
+                            <Button
+                                variant="light"
+                                onPress={() => setAutoGenModalOpen(false)}
+                                className="bg-[#F4F4F5] hover:bg-[#E4E4E7] text-[#71717A] hover:text-[#18181B] font-medium transition-colors h-10 px-4 min-w-0 rounded-[12px]"
+                                disableRipple
+                            >
+                                Fermer
+                            </Button>
+                        )
+                    )
+                }
+            >
+                {generationComplete ? (
+                    <div className="flex flex-col items-center gap-4 py-4">
+                        <div className="w-12 h-12 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M20 6L9 17l-5-5"/>
+                            </svg>
+                        </div>
+                        <p className="text-[#09090B] font-medium text-center">
+                            {autoGenCount} descriptions ont été générées avec succès.
+                        </p>
+                        <p className="text-[#71717A] text-sm text-center">
+                            La page va se recharger...
+                        </p>
+                    </div>
+                ) : autoGenCount === 0 ? (
+                    <div className="flex flex-col gap-2 py-2">
+                        <p className="text-[#09090B] text-sm">
+                            Tout est en ordre ! Tous vos champs métas ont déjà une description.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-4 py-2">
+                         <p className="text-[#09090B] text-sm">
+                            Vous êtes sur le point de générer automatiquement une description pour <span className="font-bold">{autoGenCount} champs métas</span>.
+                        </p>
+                        <div className="bg-[#F4F4F5] p-3 rounded-lg border border-[#E4E4E7]">
+                            <p className="text-[#71717A] text-xs">
+                                <span className="font-semibold text-[#18181B]">Note :</span> Les descriptions seront basées sur le nom de la clé (ex: "taille_produit" deviendra "Taille produit").
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </BasilicModal>
+
+            <BasilicModal
+                isOpen={!!modalData}
+                onClose={() => setModalData(null)}
+                title="Modification du Champs Méta"
+                footer={
+                    <>
+                        <Button
+                            variant="light"
+                            onPress={() => setModalData(null)}
+                            className="bg-[#F4F4F5] hover:bg-[#E4E4E7] text-[#71717A] hover:text-[#18181B] font-medium transition-colors h-10 px-4 min-w-0 rounded-[12px]"
+                            disableRipple
+                        >
+                            Annuler
+                        </Button>
+                        <BasilicButton
+                            onPress={() => {
                                 submit({
                                     action: 'update_desc',
-                                    description: (document.getElementById('desc-input') as HTMLTextAreaElement).value,
+                                    description: editDescription,
                                     id: modalData.id,
                                     ownerType: modalData.ownerType,
                                     key: modalData.fullKey,
-                                    name: modalData.name
+                                    name: editName
                                 }, {method:'post'});
                                 setModalData(null);
-                            }} style={{background:'#008060', color:'white', border:'none', padding:'8px 15px', borderRadius:4, cursor:'pointer'}}>Sauvegarder</button>
+                            }}
+                        >
+                            Sauvegarder
+                        </BasilicButton>
+                    </>
+                }
+            >
+                {modalData && (
+                    <div className="space-y-4 pt-2">
+                        
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-default-700">Titre</label>
+                            <input
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                className="w-full p-3 border border-default-200 rounded-[10px] focus:outline-none focus:ring-2 focus:ring-primary font-inter text-sm"
+                                placeholder="Nom du champ"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-default-700">Description</label>
+                            <textarea
+                                value={editDescription}
+                                onChange={(e) => setEditDescription(e.target.value)}
+                                className="w-full h-24 p-3 border border-default-200 rounded-[10px] resize-none focus:outline-none focus:ring-2 focus:ring-primary font-inter text-sm"
+                                placeholder="Entrez une description..."
+                            />
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+            </BasilicModal>
         </div>
     );
 }

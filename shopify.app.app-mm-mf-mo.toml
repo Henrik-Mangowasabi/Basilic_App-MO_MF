@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "3898419da69de8dbe2c3e5a705204fa0"
-name = "App MM - MF/MO "
+name = "Basilic App - Gestion"
 application_url = "https://app-mm-mf-mo.onrender.com"
 embedded = true
 

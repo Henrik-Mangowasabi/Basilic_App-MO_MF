@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "bfaf53f397e6bf08186cb2a3ade9f065"
-name = "App_MM-MO-MF"
+name = "Basilic App - Gestion"
 application_url = "https://example.com"
 embedded = true
 
@@ -22,7 +22,7 @@ api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products"
+scopes = "write_products,read_themes"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]

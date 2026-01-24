@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLoaderData, useSubmit, useFetcher, Link } from "react-router";
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
 
 // --- CSS ADAPTÉ DE GLOBAL.JS (identique à MF) ---
 const STYLES = `
@@ -46,12 +45,8 @@ const STYLES = `
     /* ELEMENTS */
     .type-pill { background: #f1f3f5; padding: 3px 8px; border-radius: 12px; font-size: 10px; display: inline-block; }
     .count-bubble { background: #e3f2fd; color: #1976d2; padding: 2px 8px; border-radius: 50%; font-size: 12px; }
-    .img-box { width: 35px; height: 35px; position: relative; margin: 0 auto; cursor: pointer; }
-    .img-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; border: 1px solid #eee; }
-    .img-box:hover img { transform: scale(1.5); position:relative; z-index:10; transition:0.2s; }
-    .del-img { position:absolute; top:-5px; right:-5px; background:white; border-radius:50%; width:15px; height:15px; font-size:10px; display:flex; align-items:center; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.2); }
-    
     .edit-icon { opacity: 0.6; cursor: pointer; color: #888; margin-left: 8px; }
+    .edit-icon:hover { opacity: 1; color: #008060; }
     .edit-icon:hover { opacity: 1; color: #008060; }
     .btn-del { border: none; background: none; cursor: pointer; color: #999; }
     .btn-del:hover { color: red; }
@@ -86,10 +81,6 @@ const FAKE = {
 export const loader = async ({ request }: any) => {
     const { admin } = await authenticate.admin(request);
     
-    const localImages = await db.localImage.findMany();
-    const imgMap: Record<string, string> = {};
-    localImages.forEach(img => imgMap[img.id] = img.data);
-
     const q = `#graphql
         query { metaobjectDefinitions(first: 50) { nodes { id name type description metaobjectsCount fieldDefinitions { name key type { name } } } } }
     `;
@@ -100,7 +91,6 @@ export const loader = async ({ request }: any) => {
     
     const moData = (json.data?.metaobjectDefinitions?.nodes || []).map((n: any) => ({
         ...n, kind: 'MO', 
-        img: imgMap[n.id],
         count: n.metaobjectsCount,
         fieldsCount: n.fieldDefinitions.length,
         fieldsJson: JSON.stringify(n.fieldDefinitions),
@@ -134,8 +124,8 @@ export const loader = async ({ request }: any) => {
     }
 
     const returnData = { 
-        shop: shopJson.data.shop.name,
-        shopDomain: shopJson.data.shop.myshopifyDomain,
+        shop: shopJson?.data?.shop?.name || 'Boutique',
+        shopDomain: shopJson?.data?.shop?.myshopifyDomain || '',
         moData,
         mfCount
     };
@@ -227,17 +217,6 @@ export const action = async ({ request }: any) => {
         return { ok: true, deleted: true };
     }
 
-    // CRUD Images & Definition
-    if (actionType === "upload_image") {
-        const id = formData.get("id") as string;
-        const image = formData.get("image") as string;
-        await db.localImage.upsert({ where: { id }, update: { data: image }, create: { id, data: image } });
-        return { ok: true };
-    }
-    if (actionType === "delete_image") {
-        await db.localImage.delete({ where: { id: formData.get("id") as string } }).catch(()=>{});
-        return { ok: true };
-    }
     if (actionType === "delete_item") {
         await admin.graphql(`#graphql mutation { metaobjectDefinitionDelete(id: "${formData.get("id")}") { userErrors { message } } }`);
         return { ok: true };
@@ -488,18 +467,6 @@ export default function AppMo() {
                             <span className="edit-icon" onClick={(e)=>{e.stopPropagation(); setModalData(d)}}>✎</span>
                         </div>
                     </td>
-                    <td className="col-img" data-search-area="true">
-                        {d.img ? (
-                            <div className="img-box">
-                                <img src={d.img} alt="" />
-                                <span className="del-img" onClick={()=>{if(confirm('Supprimer?')) submit({action:'delete_image', id:d.id},{method:'post'})}}>❌</span>
-                            </div>
-                        ) : (
-                            <label style={{cursor:'pointer', fontSize:20}}>📷<input type="file" hidden accept="image/*" onChange={(e)=>e.target.files && (() => { 
-                                const r=new FileReader(); r.onload=ev=>submit({action:'upload_image', id:d.id, image:ev.target?.result as string},{method:'post'}); r.readAsDataURL(e.target.files[0]);
-                            })()} /></label>
-                        )}
-                    </td>
                     <td className="col-vol clickable sortable" data-search-area="true" onClick={()=>handleToggleEntries(d.type, d.fieldsJson)}>
                         <strong style={{color:d.count>0?'#008060':'#ccc'}}>{highlight(d.count.toString())}</strong>
                     </td>
@@ -520,7 +487,7 @@ export default function AppMo() {
                 {/* STRUCTURE ROW */}
                 {expandedStruct === d.id && (
                     <tr className="entries-row">
-                        <td colSpan={devMode ? 8 : 6} style={{padding:0}}>
+                        <td colSpan={devMode ? 7 : 5} style={{padding:0}}>
                             <div style={{padding:'10px 30px', borderLeft:'4px solid #008060'}}>
                                 <table className="sub-table">
                                     {fields.map((f:any) => <tr key={f.key}><td><strong>{f.name}</strong></td><td><code>{f.key}</code></td><td>{f.type.name}</td></tr>)}
@@ -533,7 +500,7 @@ export default function AppMo() {
                 {/* ENTRIES ROW */}
                 {isOpen && (
                     <tr className="entries-row">
-                        <td colSpan={devMode ? 8 : 6} style={{padding:0}}>
+                        <td colSpan={devMode ? 7 : 5} style={{padding:0}}>
                             <div style={{borderLeft:'4px solid #1976d2'}}>
                                 <div className="mo-tools">
                                     <input type="number" min="1" max="50" style={{width:50, padding:4, border:'1px solid #1976d2', borderRadius:4}} 
@@ -571,7 +538,7 @@ export default function AppMo() {
             <style>{STYLES}</style>
             <div className="mm-container">
                 <header className="mm-header">
-                    <h1 style={{margin:0}}>MM Gestion - Objets Méta (MO)</h1>
+                    <h1 style={{margin:0}}>Basilic App - Gestion (MO)</h1>
                     <div style={{display:'flex', gap:'15px', alignItems:'center'}}>
                         <label style={{cursor:'pointer', display:'flex', alignItems:'center', gap:'5px', fontSize:'12px'}}>
                             <input type="checkbox" checked={devMode} onChange={toggleDev} /> 🛠️ Mode Dév
@@ -599,6 +566,7 @@ export default function AppMo() {
                 <div className="tabs">
                     <Link to="/app/mf" className="tab-link">Champs Méta (MF) <span className="tab-badge">{mfCount || 0}</span></Link>
                     <Link to="/app/mo" className="tab-link active">Objets Méta (MO) <span className="tab-badge">{moData.length}</span></Link>
+                    <Link to="/app/templates" className="tab-link">Templates</Link>
                 </div>
 
                 <table className="main-table">
@@ -617,7 +585,6 @@ export default function AppMo() {
                                     {sortBy === 'name' && (sortOrder === 'asc' ? ' ↑' : ' ↓')}
                                 </div>
                             </th>
-                            <th className="col-img" align="center">MÉMO</th>
                             <th className="col-vol sortable" align="center">
                                 <div onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleSort('count');}} style={{cursor: 'pointer', userSelect: 'none', display: 'inline-block', width: '100%'}}>
                                     ASSIGN.
@@ -638,7 +605,7 @@ export default function AppMo() {
                     </thead>
                     <tbody>
                         {sortedData.length === 0 ? (
-                            <tr><td colSpan={devMode ? 8 : 6} style={{textAlign:'center', padding:'20px', color:'#999'}}>Aucun objet méta trouvé.</td></tr>
+                            <tr><td colSpan={devMode ? 7 : 5} style={{textAlign:'center', padding:'20px', color:'#999'}}>Aucun objet méta trouvé.</td></tr>
                         ) : (
                             sortedData.map((d: any) => <Row key={d.id} d={d} />)
                         )}
