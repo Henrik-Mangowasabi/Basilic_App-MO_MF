@@ -139,7 +139,13 @@ const translateType = (t: string) => {
 
 // --- BACKEND LOADER & ACTION ---
 export const loader = async ({ request }: any) => {
-    const { admin } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
+    
+    // 🔥 FORCE RE-AUTH IF SCOPE MISSING
+    if (session?.scope && !session.scope.includes('read_themes')) {
+        console.log("Missing read_themes scope, redirecting...");
+        throw await login(request); // Use login helper instead of authenticate(force)
+    }
     
     const installedApps: Record<string, string> = {};
     try {
@@ -169,51 +175,66 @@ export const loader = async ({ request }: any) => {
             return (json.data?.metafieldDefinitions?.nodes || []).map((n: any) => {
                 const ns = n.namespace.toLowerCase();
                 
-                let appName = null;
-                let isAppInstalled = false;
-                
-                for (const [namespacePattern, appTitle] of Object.entries(shopifyNamespaceApps)) {
-                    if (ns.includes(namespacePattern)) {
+                let appStatus = 'UNKNOWN'; // MANUAL, SHOPIFY, INSTALLED, UNINSTALLED
+                let displayAppName = '';
+
+                // 0. SPECIFIC OVERRIDES
+                if (ns.includes('shopify--discovery')) {
+                    appStatus = 'INSTALLED';
+                    displayAppName = 'Search & Discovery';
+                }
+                // 1. Check MANUAL
+                else if (ns === 'custom' || ns === 'test_data' || ns.startsWith('etst')) {
+                    appStatus = 'MANUAL';
+                    displayAppName = 'Manuel';
+                }
+                // 2. Check SHOPIFY Standard (excluding apps using '--')
+                else if (ns === 'shopify' || (ns.includes('shopify') && !ns.includes('--'))) {
+                    appStatus = 'SHOPIFY';
+                    displayAppName = 'Shopify Standard';
+                }
+                // 3. Check Known Shopify Apps (Search & Discovery, etc which use specific namespaces)
+                else {
+                    // Check against known mappings first
+                    for (const [pattern, title] of Object.entries(shopifyNamespaceApps)) {
+                       if (ns.includes(pattern)) {
+                           // It matches a known Shopify App pattern. Is it installed?
+                           const isInstalled = Object.values(installedApps).some(t => {
+                               const normT = t.toLowerCase().replace('&', 'and').replace(/\s+/g, '');
+                               const normTitle = title.toLowerCase().replace('&', 'and').replace(/\s+/g, '');
+                               return normT.includes(normTitle) || normTitle.includes(normT);
+                           });
+                           appStatus = isInstalled ? 'INSTALLED' : 'UNINSTALLED';
+                           displayAppName = title;
+                           // Si c'est Search & Discovery, on force le bon nom affiché si installé
+                           if (isInstalled) {
+                                const realName = Object.values(installedApps).find(t => t.toLowerCase().includes('search')) || title;
+                                displayAppName = realName;
+                           }
+                           break;
+                       } 
+                    }
+
+                    // 4. Check against Installed Apps (generic handle match)
+                    if (appStatus === 'UNKNOWN') {
                         for (const [handle, title] of Object.entries(installedApps)) {
-                            const titleLower = title.toLowerCase();
-                            if (titleLower.includes('search') && titleLower.includes('discovery')) {
-                                appName = title;
-                                isAppInstalled = true;
+                            if (ns === handle || ns.includes(handle)) {
+                                appStatus = 'INSTALLED';
+                                displayAppName = title;
                                 break;
                             }
                         }
-                        if (!appName) {
-                            appName = appTitle;
-                            isAppInstalled = true;
-                        }
-                        break;
+                    }
+
+                    // 5. If still unknown, it's likely an uninstalled app
+                    if (appStatus === 'UNKNOWN') {
+                        appStatus = 'UNINSTALLED';
+                        // Format namespace to look like an app name
+                        displayAppName = ns.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                     }
                 }
-                
-                if (!appName) {
-                    for (const [handle, title] of Object.entries(installedApps)) {
-                        if (ns === handle || ns.includes(handle) || handle.includes(ns)) {
-                            appName = title;
-                            isAppInstalled = true;
-                            break;
-                        }
-                    }
-                }
-                
-                let status = '';
-                if (ns === 'custom' || ns === 'test_data' || ns.startsWith('etst')) {
-                    status = 'Manuel';
-                } else if (appName && isAppInstalled) {
-                    status = `App: ${appName}`;
-                } else {
-                    if (ns.includes('shopify') && !ns.includes('--')) {
-                        status = 'Shopify';
-                    } else if (ns.includes('shopify')) {
-                        status = 'Shopify';
-                    } else {
-                        status = `App Désinstallée`;
-                    }
-                }
+
+                const status = displayAppName; // Fallback for old code if needed
 
                 return {
                     ...n, kind: 'MF', ownerType,
@@ -221,6 +242,7 @@ export const loader = async ({ request }: any) => {
                     typeDisplay: translateType(n.type?.name),
                     fullKey: `${n.namespace}.${n.key}`,
                     status,
+                    appStatus, // Pass the enum for UI styling
                     code_usage: 'Non' // Placeholder: Requires scanning theme code
                 };
             });
@@ -342,8 +364,8 @@ export const action = async ({ request }: any) => {
                         files(first: 250) {
                             nodes {
                                 filename
-                                ... on OnlineStoreThemeFileBodyText {
-                                    body {
+                                body {
+                                    ... on OnlineStoreThemeFileBodyText {
                                         content
                                     }
                                 }
@@ -643,7 +665,7 @@ export default function AppMf() {
                     );
                 case "fullKey":
                     return (
-                        <div className="mf-cell mf-cell--start">
+                        <div className="mf-cell mf-cell--key">
                             <span className="mf-text--key" title={item.fullKey}>
                                 {highlightText(item.fullKey, search)}
                             </span>
@@ -651,22 +673,44 @@ export default function AppMf() {
                     );
                 case "type":
                     return (
-                        <div className="mf-cell mf-cell--start">
+                        <div className="mf-cell mf-cell--type">
                             <span className="mf-chip">{highlightText(item.typeDisplay, search)}</span>
                         </div>
                     );
                 case "status":
                     return (
-                        <div className="mf-cell mf-cell--start">
-                            <span className="mf-text--status">{highlightText(item.status, search)}</span>
+                        <div className="mf-cell mf-cell--status" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }}>
+                            <span className="text-[13px] text-[#18181B] font-medium leading-tight text-left">
+                                {item.status}
+                            </span>
+                            
+                            {item.appStatus === 'INSTALLED' && (
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#17C964]"></div>
+                                    <span className="text-[11px] text-[#17C964] font-medium">Installée</span>
+                                </div>
+                            )}
+
+                            {item.appStatus === 'UNINSTALLED' && (
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#F5A524]"></div>
+                                    <span className="text-[11px] text-[#F5A524] font-medium">Désinstallée</span>
+                                </div>
+                            )}
+                            
+                            {(item.appStatus === 'MANUAL' || item.appStatus === 'SHOPIFY') && (
+                                <span className="text-[11px] text-[#71717A] text-left">
+                                    {item.appStatus === 'MANUAL' ? 'Création manuelle' : 'Standard Shopify'}
+                                </span>
+                            )}
                         </div>
                     );
                 case "code_usage": {
                     const isFound = scannedKeys.has(item.fullKey);
                     const displayText = isFound ? 'Oui' : 'Non';
                     return (
-                        <div className="mf-cell mf-cell--center">
-                            <span className={`px-2 py-0.5 rounded text-[12px] font-medium ${isFound ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                        <div className="mf-cell mf-cell--center mf-cell--badge">
+                            <span className={`mf-badge--code ${isFound ? 'mf-badge--found' : ''}`}>
                                 {displayText}
                             </span>
                         </div>
@@ -696,14 +740,9 @@ export default function AppMf() {
                 case "menu":
                     return (
                         <div className="mf-cell mf-cell--center">
-                            <Dropdown 
-                                placement="bottom-end"
-                                classNames={{
-                                    content: "p-0 border-none shadow-none bg-transparent min-w-0 w-auto"
-                                }}
-                            >
+                            <Dropdown>
                                 <DropdownTrigger>
-                                    <Button isIconOnly size="sm" variant="light" className="text-default-400 min-w-8 w-8 h-8">
+                                    <Button isIconOnly variant="light" size="sm" className="text-default-400">
                                         <Icons.VerticalDots />
                                     </Button>
                                 </DropdownTrigger>
@@ -723,19 +762,16 @@ export default function AppMf() {
                                             setModalData(item);
                                             setEditName(item.name || '');
                                             setEditDescription(item.description || '');
+                                            setIsModalOpen(true);
                                         }}
                                     >
-                                        Editer
+                                        Modifier
                                     </DropdownItem>
                                     <DropdownItem 
                                         key="delete" 
-                                        startContent={<Icons.Delete />}
-                                        className="text-[#C20E4D] data-[hover=true]:bg-[#FFF1F2] data-[hover=true]:text-[#BE123C]"
-                                        onPress={() => {
-                                            if(confirm('Supprimer ce champ méta ?')) {
-                                                submit({action:'delete_item', id:item.id}, {method:'post'});
-                                            }
-                                        }}
+                                        className="text-[#EF4444] data-[hover=true]:text-[#DC2626]" 
+                                        startContent={<Icons.Delete className="text-inherit" />}
+                                        onPress={() => handleDeleteClick(item)}
                                     >
                                         Supprimer
                                     </DropdownItem>
@@ -748,14 +784,9 @@ export default function AppMf() {
             }
         })();
 
-        if (isDevCol && devMode) {
-            return (
-                <div className="mf-cell--dev">
-                    {content}
-                </div>
-            );
-        }
-        
+        // Si colonne dev et devMode inactif, on ne devrait pas être là, mais au cas où
+        if (isDevCol && !devMode) return null;
+
         return content;
     };
 
@@ -798,8 +829,42 @@ export default function AppMf() {
                                 className="mf-table"
                                 removeWrapper
                                 selectionMode="multiple"
-                                selectedKeys={selectedKeys}
-                                onSelectionChange={setSelectedKeys as any}
+                                selectionMode="multiple"
+                                selectionBehavior="toggle"
+                                onRowAction={() => {}} // Intercept click to prevent selection
+                                selectedKeys={
+                                    // 1. Isolate selection for THIS table only
+                                    // If "all" is selected globally, we pass "all" (HeroUI handles it)
+                                    // Otherwise we filter global keys to keep only those present in this section
+                                    (selectedKeys as any) === "all" 
+                                        ? "all" 
+                                        : new Set(
+                                            [...selectedKeys].filter(k => 
+                                                filteredData.some((d: any) => d.id === k)
+                                            )
+                                        )
+                                }
+                                onSelectionChange={(keys: any) => {
+                                    // 2. Merge local table selection with global selection
+                                    if (keys === "all") {
+                                        // If "select all" in this table -> Add all THIS table's items to global
+                                        // (Careful: HeroUI might return "all" string)
+                                        const newSet = new Set(selectedKeys);
+                                        filteredData.forEach((d: any) => newSet.add(d.id));
+                                        setSelectedKeys(newSet);
+                                    } else {
+                                        // If specific keys selected
+                                        const newSelection = new Set(keys);
+                                        const otherKeys = new Set(
+                                            [...selectedKeys].filter(k => 
+                                                !filteredData.some((d: any) => d.id === k)
+                                            )
+                                        );
+                                        // Global = (Global - ThisTableItems) + NewSelectionFromThisTable
+                                        const finalSet = new Set([...otherKeys, ...newSelection]);
+                                        setSelectedKeys(finalSet);
+                                    }
+                                }}
                                 classNames={{
                                     wrapper: "mf-table__wrapper",
                                     th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`,

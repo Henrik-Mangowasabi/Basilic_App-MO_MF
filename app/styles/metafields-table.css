@@ -27,6 +27,35 @@
     align-items: center;
 }
 
+.mf-cell--key {
+    width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mf-cell--key, 
+.mf-cell--type,
+.mf-cell--status,
+.mf-cell--code,
+.mf-cell--badge {
+    background-color: #F4F4F5; 
+}
+
+/* Allow blue row background to show through on hover/selection */
+.mf-table__row[data-selected="true"] .mf-cell--key,
+.mf-table__row[data-selected="true"] .mf-cell--type,
+.mf-table__row[data-selected="true"] .mf-cell--status,
+.mf-table__row[data-selected="true"] .mf-cell--code,
+.mf-table__row[data-selected="true"] .mf-cell--badge,
+.mf-table__row[data-hover="true"] .mf-cell--key,
+.mf-table__row[data-hover="true"] .mf-cell--type,
+.mf-table__row[data-hover="true"] .mf-cell--status,
+.mf-table__row[data-hover="true"] .mf-cell--code,
+.mf-table__row[data-hover="true"] .mf-cell--badge {
+    background-color: transparent !important;
+}
+
 /* --- COLONNES DEV MODE --- */
 .mf-cell--dev {
     position: absolute;
@@ -91,6 +120,19 @@
     text-overflow: ellipsis;
 }
 
+/* Allow selection and copy-paste on texts */
+.mf-text--title,
+.mf-text--desc,
+.mf-text--key,
+.mf-text--status,
+.mf-badge--count,
+.mf-badge--code,
+.mf-chip {
+    cursor: text !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
+
 /* --- BADGE COUNT --- */
 .mf-badge--count {
     display: inline-flex;
@@ -111,7 +153,7 @@
 
 .mf-table__row[data-selected="true"] .mf-badge--count,
 .mf-table__row[data-hover="true"] .mf-badge--count {
-    background: rgba(0, 111, 238, 0.20);
+    background: rgba(0, 111, 238, 0.20) !important;
 }
 
 
@@ -136,6 +178,36 @@
 .mf-table__row[data-selected="true"] .mf-chip,
 .mf-table__row[data-hover="true"] .mf-chip {
     background: #FAFAFA
+}
+
+/* --- BADGE CODE (Oui/Non) --- */
+.mf-badge--code {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    font-family: Inter;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 16px; 
+
+    background: rgba(212, 212, 216, 0.40); /* Default gray like chip */
+    border-radius: 100px;
+    padding: 4px 10px;
+    color: #000;
+}
+
+/* Hover/Selected state for "Non" badges (gray ones) */
+.mf-table__row[data-selected="true"] .mf-badge--code:not(.mf-badge--found),
+.mf-table__row[data-hover="true"] .mf-badge--code:not(.mf-badge--found) {
+    background: #FAFAFA;
+}
+
+/* "Oui" Badge Style (Green) - unaffected by row hover color change */
+.mf-badge--found {
+    background-color: #DCFCE7 !important; /* green-100 */
+    color: #15803D !important; /* green-700 */
 }
 
 /* --- ACTIONS --- */
@@ -346,6 +418,25 @@ tr[role="rowgroup"]::after {
 /* OVERRIDE HEROUI - Rows */
 .mf-table__row {
     border: none !important;
+}
+
+/* RE-ENABLE POINTER EVENTS ON CHECKBOX CELL */
+.mf-table__row td:first-child {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+
+/* RE-ENABLE POINTER EVENTS ON ACTIONS cell & Interactive elements */
+.mf-table__row td:last-child, /* Actions column usually last */
+.mf-table__row .mf-action-link,
+.mf-table__row button,
+.mf-table__row a {
+    pointer-events: auto !important;
+}
+
+/* Allow text selection even without pointer events (this is browser default usually but good to enforce) */
+.mf-table__row * {
+    user-select: text;
 }
 
 

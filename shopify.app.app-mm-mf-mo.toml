@@ -5,12 +5,15 @@ name = "Basilic App - Gestion"
 application_url = "https://app-mm-mf-mo.onrender.com"
 embedded = true
 
+[build]
+automatically_update_urls_on_dev = true
+
 [webhooks]
 api_version = "2026-01"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,write_customers,write_draft_orders,read_draft_orders,write_locations,read_locations,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_metaobject_definitions,write_metaobject_definitions,read_metaobjects,write_metaobjects,read_orders,write_orders,read_products,write_products,read_content,write_content,read_themes"
+scopes = "read_content,read_customers,read_draft_orders,read_locations,read_merchant_managed_fulfillment_orders,read_metaobject_definitions,read_metaobjects,read_orders,read_products,write_content,write_customers,write_draft_orders,write_locations,write_merchant_managed_fulfillment_orders,write_metaobject_definitions,write_metaobjects,write_orders,write_products,read_themes"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
@@ -20,6 +23,3 @@ redirect_urls = [
   "https://app-mm-mf-mo.onrender.com/auth/shopify/callback",
   "https://app-mm-mf-mo.onrender.com/api/auth/callback"
 ]
-
-[build]
-automatically_update_urls_on_dev = true
