@@ -300,6 +300,7 @@ export const action = async ({ request }: any) => {
     }
     
     if (actionType === "scan_code") {
+        console.log("Starting code scan...");
         try {
             // 1. Get the main theme
             const themesQuery = `#graphql
@@ -313,8 +314,20 @@ export const action = async ({ request }: any) => {
                 }
             `;
             
+            console.log("Fetching themes...");
             const themesRes = await admin.graphql(themesQuery);
             const themesJson = await themesRes.json();
+            console.log("Themes response:", JSON.stringify(themesJson));
+
+            if (themesJson.errors) {
+                // Check specifically for scope errors
+                const scopeError = themesJson.errors.find((e: any) => e.message.includes("access scope"));
+                if (scopeError) {
+                    return { ok: false, error: "MISSING_SCOPES", details: scopeError.message };
+                }
+                return { ok: false, error: themesJson.errors[0].message };
+            }
+
             const mainTheme = themesJson.data?.themes?.nodes?.[0];
             
             if (!mainTheme) {
@@ -514,7 +527,11 @@ export default function AppMf() {
                 setIsScanning(false);
             } else if (result.error) {
                 console.error('Scan failed:', result.error);
-                alert(`Erreur lors du scan: ${result.error || 'Erreur inconnue'}`);
+                if (result.error === "MISSING_SCOPES") {
+                    alert("⚠️ Permission manquante : L'application n'a pas le droit de lire le thème.\n\nSolution : Désinstallez et réinstallez l'application pour accepter les nouvelles permissions.");
+                } else {
+                    alert(`Erreur lors du scan: ${result.error || 'Erreur inconnue'}`);
+                }
                 setIsScanning(false);
             }
         }
