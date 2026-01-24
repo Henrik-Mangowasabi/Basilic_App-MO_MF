@@ -283,41 +283,7 @@ export const action = async ({ request }: any) => {
     const actionType = formData.get("action");
 
     if (actionType === "delete_item") {
-        const idsRaw = formData.get("ids") as string;
-        const id = formData.get("id") as string;
-        let ids: string[] = [];
-
-        if (idsRaw) {
-            try {
-                ids = JSON.parse(idsRaw);
-            } catch (e) {
-                ids = [];
-            }
-        } else if (id) {
-            ids = [id];
-        }
-
-        for (const deleteId of ids) {
-            if (!deleteId) continue;
-            try {
-                const response = await admin.graphql(
-                    `#graphql
-                    mutation DeleteMetafield($id: ID!) {
-                        metafieldDefinitionDelete(id: $id) {
-                            userErrors {
-                                message
-                            }
-                        }
-                    }`,
-                    {
-                        variables: { id: deleteId },
-                    }
-                );
-                await response.json();
-            } catch (err) {
-                console.error(`Error deleting metafield ${deleteId}:`, err);
-            }
-        }
+        await admin.graphql(`#graphql mutation { metafieldDefinitionDelete(id: "${formData.get("id")}") { userErrors { message } } }`);
         return { ok: true };
     }
     
@@ -467,7 +433,7 @@ export const action = async ({ request }: any) => {
 
 // --- FRONTEND ---
 export default function AppMf() {
-    const { shopDomain, mfData, totalCount, moCount = 0 } = useLoaderData<any>();
+    const { shop, shopDomain, mfData, totalCount, moCount = 0 } = useLoaderData<any>();
     const submit = useSubmit();
     const fetcher = useFetcher();
     
@@ -477,43 +443,17 @@ export default function AppMf() {
     const [editDescription, setEditDescription] = useState("");
     const [editName, setEditName] = useState("");
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-    const [selectedKeys, setSelectedKeys] = useState<any>(new Set([]));
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
-    const [deleteModalTitle, setDeleteModalTitle] = useState("");
+    const [selectedKeys, setSelectedKeys] = useState<Set<React.Key>>(new Set([]));
     const initializedRef = useRef(false);
 
-    const handleDeleteClick = (item: any) => {
-        setPendingDeleteIds([item.id]);
-        setDeleteModalTitle(`Supprimer "${item.name}" ?`);
-        setDeleteConfirmOpen(true);
-    };
-
     const handleBulkDelete = () => {
-        let idsToDelete: string[] = [];
-        
-        if ((selectedKeys as any) === "all") {
-            Object.values(mfData).forEach((section: any) => {
-                if (Array.isArray(section)) {
-                    section.forEach((item: any) => idsToDelete.push(String(item.id)));
-                }
+        const idsToDelete = Array.from(selectedKeys).map(k => String(k));
+        if (confirm(`Supprimer ${idsToDelete.length} champs ?`)) {
+            idsToDelete.forEach(id => {
+                submit({ action: 'delete_item', id }, { method: 'post' });
             });
-        } else {
-            idsToDelete = Array.from(selectedKeys).map(k => String(k));
+            setSelectedKeys(new Set([]));
         }
-
-        if (idsToDelete.length === 0) return;
-
-        setPendingDeleteIds(idsToDelete);
-        setDeleteModalTitle(`Supprimer ${idsToDelete.length} champs ?`);
-        setDeleteConfirmOpen(true);
-    };
-
-    const confirmDeletion = () => {
-        submit({ action: 'delete_item', ids: JSON.stringify(pendingDeleteIds) }, { method: 'post' });
-        setSelectedKeys(new Set([]));
-        setDeleteConfirmOpen(false);
-        setPendingDeleteIds([]);
     };
 
     const norm = (s: string) => {
@@ -895,16 +835,20 @@ export default function AppMf() {
                                 className="mf-table"
                                 removeWrapper
                                 selectionMode="multiple"
+                                selectionMode="multiple"
                                 selectionBehavior="toggle"
                                 onRowAction={() => {}} // Intercept click to prevent selection
                                 selectedKeys={
+                                    // 1. Isolate selection for THIS table only
+                                    // If "all" is selected globally, we pass "all" (HeroUI handles it)
+                                    // Otherwise we filter global keys to keep only those present in this section
                                     (selectedKeys as any) === "all" 
                                         ? "all" 
                                         : new Set(
-                                            [...Array.from(selectedKeys)].filter(k => 
+                                            [...selectedKeys].filter(k => 
                                                 filteredData.some((d: any) => d.id === k)
                                             )
-                                        ) as any
+                                        )
                                 }
                                 onSelectionChange={(keys: any) => {
                                     // 2. Merge local table selection with global selection
@@ -990,7 +934,7 @@ export default function AppMf() {
 
     return (
         <div className="min-h-screen bg-white">
-            <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+            <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
                 <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]">
                     <AppBrand />
                     <div className="flex gap-3 items-center">
@@ -1199,43 +1143,6 @@ export default function AppMf() {
                         </div>
                     </div>
                 )}
-            </BasilicModal>
-
-            <BasilicModal
-                isOpen={deleteConfirmOpen}
-                onClose={() => setDeleteConfirmOpen(false)}
-                title="Confirmation de suppression"
-                footer={
-                    <>
-                        <Button
-                            variant="light"
-                            onPress={() => setDeleteConfirmOpen(false)}
-                            className="bg-[#F4F4F5] hover:bg-[#E4E4E7] text-[#71717A] hover:text-[#18181B] font-medium transition-colors h-10 px-4 min-w-0 rounded-[12px]"
-                            disableRipple
-                        >
-                            Annuler
-                        </Button>
-                        <Button
-                            onPress={confirmDeletion}
-                            className="bg-[#F43F5E] hover:bg-[#E11D48] text-white font-medium h-10 px-6 rounded-[12px] transition-colors"
-                        >
-                            Confirmer la suppression
-                        </Button>
-                    </>
-                }
-            >
-                <div className="flex flex-col gap-4 py-2">
-                    <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600">
-                        <Icons.Delete />
-                        <p className="font-semibold text-sm">Action irréversible</p>
-                    </div>
-                    <p className="text-[#09090B] text-sm leading-relaxed">
-                        {deleteModalTitle}
-                    </p>
-                    <p className="text-[#71717A] text-xs leading-relaxed">
-                        Cette action supprimera définitivement la définition du champ méta. Les valeurs déjà enregistrées pour vos produits ou autres ressources pourraient ne plus être accessibles via l'administration Shopify.
-                    </p>
-                </div>
             </BasilicModal>
 
             <BasilicModal
