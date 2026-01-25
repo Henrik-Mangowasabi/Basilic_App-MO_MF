@@ -317,51 +317,49 @@ export const BasilicDropdown = ({
 
 export const NavigationTabs = ({ activePath, counts, disableNavigation = false }: { activePath: string, counts: { mf: number, mo: number }, disableNavigation?: boolean }) => {
   const navigate = useNavigate();
+  
+  const tabs = [
+    { key: "/app/mf", label: "Champs Méta", count: counts.mf, icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+    )},
+    { key: "/app/mo", label: "Objets Méta", count: counts.mo, icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+    )},
+    { key: "/app/templates", label: "Templates", icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+    )}
+  ];
+
   return (
-    <div className="flex w-full flex-col">
-      <HeroTabs 
-        aria-label="Options de navigation" 
-        selectedKey={activePath}
-        onSelectionChange={(key) => !disableNavigation && navigate(key as string)}
-        classNames={{
-          base: "w-full",
-          tabList: "bg-[#F4F4F5] p-1 gap-2 rounded-[16px] border-none shadow-none",
-          cursor: "w-full bg-white shadow-[0px_2px_8px_rgba(0,0,0,0.05)] rounded-[12px]",
-          tab: "max-w-fit px-4 h-[40px] rounded-[12px] opacity-100 group transition-colors data-[hover=true]:bg-white data-[hover=true]:opacity-100 data-[hover=true]:shadow-[0px_2px_8px_rgba(0,0,0,0.05)]",
-          tabContent: "font-medium text-[#71717A] tracking-[-0.01em] group-data-[selected=true]:text-black group-data-[hover=true]:text-black"
-        }}
-      >
-        <HeroTab
-          key="/app/mf"
-          title={
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] leading-5">Champs Méta (MF)</span>
-              <div className={`px-2 h-[20px] flex items-center justify-center rounded-full text-[12px] font-medium leading-[16px] tracking-[-0.01em] transition-colors ${activePath === '/app/mf' ? 'bg-[#4BB961] text-white' : 'bg-[#E4E4E7] text-[#18181B] group-hover:bg-[#4BB961] group-hover:text-white'}`}>
-                {counts.mf}
-              </div>
-            </div>
-          }
-        />
-        <HeroTab
-          key="/app/mo"
-          title={
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] leading-5">Objets Méta (MO)</span>
-              <div className={`px-2 h-[20px] flex items-center justify-center rounded-full text-[12px] font-medium leading-[16px] tracking-[-0.01em] transition-colors ${activePath === '/app/mo' ? 'bg-[#4BB961] text-white' : 'bg-[#E4E4E7] text-[#18181B] group-hover:bg-[#4BB961] group-hover:text-white'}`}>
-                {counts.mo}
-              </div>
-            </div>
-          }
-        />
-        <HeroTab
-          key="/app/templates"
-          title={
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] leading-5">Templates</span>
-            </div>
-          }
-        />
-      </HeroTabs>
+    <div className="bg-[#F4F4F5]/60 p-1.5 rounded-[20px] flex items-center gap-1 w-fit shadow-sm border border-[#E4E4E7]/50">
+      {tabs.map((tab) => {
+        const isActive = activePath === tab.key;
+        return (
+          <button
+            key={tab.key}
+            onClick={() => !disableNavigation && navigate(tab.key)}
+            className={`
+              relative flex items-center gap-2.5 px-4 h-10 rounded-[14px] transition-all duration-300 group
+              ${isActive 
+                ? 'bg-white shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-[#18181B]' 
+                : 'text-[#71717A] hover:text-[#18181B] hover:bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]'}
+            `}
+          >
+            <span className={`transition-colors duration-300 ${isActive ? 'text-[#4BB961]' : 'text-[#A1A1AA] group-hover:text-[#4BB961]'}`}>
+              {tab.icon}
+            </span>
+            <span className="text-[14px] font-semibold tracking-tight">{tab.label}</span>
+            {tab.count !== undefined && (
+              <span className={`
+                min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300
+                ${isActive ? 'bg-[#4BB961] text-white scale-110' : 'bg-[#E4E4E7] text-[#71717A] group-hover:bg-[#4BB961] group-hover:text-white'}
+              `}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 };

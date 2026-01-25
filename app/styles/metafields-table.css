@@ -14,6 +14,7 @@
     flex-direction: column;
     gap: 4px;
     justify-content: center;
+    align-items: flex-start !important;
 }
 
 .mf-cell--center {
@@ -56,6 +57,7 @@
 .mf-table__row[data-hover="true"] .mf-cell--code,
 .mf-table__row[data-hover="true"] .mf-cell--badge {
     background-color: transparent !important;
+    transition: none !important;
 }
 
 /* --- COLONNES DEV MODE --- */
@@ -73,13 +75,16 @@
 
 /* --- TEXTES --- */
 .mf-text--title {
-    color: var(--colors-layout-foreground, #11181C);
-    /* text-small */
-    font-family: Inter;
+    color: var(--colors-layout-foreground, #18181B);
+    font-family: Inter, sans-serif;
     font-size: 14px;
-    font-style: normal;
     font-weight: 400;
     line-height: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
 }
 
 .mf-text--desc {
@@ -602,24 +607,28 @@ tr[role="rowgroup"]::after {
    CHECKBOX CUSTOM STYLING
    ============================================ */
 
-/* 1. Reset Base Box */
-.mf-table label span:not([class*="hidden"]):not(svg) {
+/* 1. Reset Base Box & Animation */
+.mf-table label span:not([class*="hidden"]):not(svg),
+.mf-table label span::after,
+.mf-table [data-slot="wrapper"],
+.mf-table [data-slot="mask"] {
     border-radius: 6px !important;
     border: 2px solid #D4D4D8 !important;
-    background-color: transparent !important;
-    transition: all 0.2s;
+    background-color: transparent;
+    transition: background-color 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
 }
+
+
 
 /* 2. FORCE BLUE BACKGROUND on logic states (Selected/Indeterminate) */
 /* We target the span AND the ::after pseudo-element just in case HeroUI uses it for the fill */
 
 .mf-table__row[data-selected="true"] label span:not([class*="hidden"]):not(svg),
-.mf-table__row[data-selected="true"] label[data-selected="true"] span:not([class*="hidden"]):not(svg),
 .mf-table label[data-selected="true"] span:not([class*="hidden"]):not(svg),
 .mf-table__header label[data-selected="true"] span:not([class*="hidden"]):not(svg),
 .mf-table__header label[data-indeterminate="true"] span:not([class*="hidden"]):not(svg) {
-    background-color: #006FEE !important;
-    border-color: #006FEE !important;
+    background-color: #006FEE;
+    border-color: #006FEE;
 }
 
 /* Force ::after to be blue if it exists (User request "un truc comme ça") */
@@ -647,6 +656,31 @@ tr[role="rowgroup"]::after {
     background-color: #005BC4 !important;
     border-color: #005BC4 !important;
 }
+
+/* Ensure checkbox box also highlights when the entire row is hovered (User request) */
+/* This forces the "Image 2" style (gray bg + darker border) on hover ONLY for Body rows that are NOT selected */
+.mf-table tbody tr:hover:not([data-selected="true"]) label span,
+.mf-table tbody tr[data-hover="true"]:not([data-selected="true"]) label span,
+.mf-table tbody tr:hover:not([data-selected="true"]) label span::after,
+.mf-table tbody tr[data-hover="true"]:not([data-selected="true"]) label span::after {
+    background-color: #F4F4F5;
+    border-color: #71717A;
+}
+
+/* Specific body fix for HeroUI's internal checkbox structure */
+.mf-table tbody tr:hover:not([data-selected="true"]) [data-slot="wrapper"],
+.mf-table tbody tr:hover:not([data-selected="true"]) [data-slot="mask"] {
+    background-color: #F4F4F5;
+    border-color: #71717A;
+}
+
+
+
+
+
+
+
+
 
 
 
@@ -715,4 +749,107 @@ tr[role="rowgroup"]::after {
 
 .mf-dropdown-item--delete[data-hover="true"] .mf-dropdown-item__title {
     color: #DC2626 !important;
+}
+
+/* ============================================
+   TOAST NOTIFICATION
+   ============================================ */
+.mf-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 24px;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: #F4F4F5;
+    border: 1px solid #E4E4E7;
+    border-radius: 18px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    min-width: 320px;
+    animation: toast-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mf-toast--info-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: #000;
+    color: #FFF;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.mf-toast__content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mf-toast__title {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #18181B;
+}
+
+.mf-toast__message {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    color: #71717A;
+}
+
+.mf-toast__close {
+    margin-left: auto;
+    color: #A1A1AA;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+/* --- CUSTOM SCROLLBAR (Clean & Visible) --- */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #E4E4E7 !important;
+    border-radius: 20px !important;
+    border: 2px solid transparent !important; /* Makes it look very thin (2px) */
+    background-clip: content-box !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #D4D4D8 !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-button {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
+.custom-scrollbar {
+    scrollbar-width: thin; /* Restore for Firefox */
+}
+
+.mf-toast__close:hover {
+    color: #18181B;
+}
+
+@keyframes toast-slide-in {
+    from {
+        transform: translateY(100%) scale(0.9);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
 }
