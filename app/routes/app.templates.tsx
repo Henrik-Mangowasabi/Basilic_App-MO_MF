@@ -1,72 +1,342 @@
-import { useState } from "react";
-import { useLoaderData, useLocation } from "react-router";
-import { authenticate } from "../shopify.server";
-import { AppBrand, DevModeToggle, NavigationTabs, BasilicSearch } from "../components/BasilicUI";
+import { useState, useEffect, useMemo } from "react";
+import { useLoaderData, useSubmit, useRevalidator, useLocation } from "react-router";
+import { authenticate, apiVersion } from "../shopify.server";
+import "../styles/metafields-table.css";
+import { AppBrand, DevModeToggle, BasilicButton, BasilicSearch, NavigationTabs, BasilicModal } from "../components/BasilicUI";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
+
+const Icons = {
+    Products: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}><path d="M8.372 11.6667C7.11703 10.4068 7.23007 8.25073 8.62449 6.85091L12.6642 2.79552C14.0586 1.3957 16.2064 1.28222 17.4613 2.54206C18.7163 3.8019 18.6033 5.95797 17.2088 7.3578L15.189 9.3855" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path opacity="0.5" d="M11.6281 8.33333C12.8831 9.59317 12.77 11.7492 11.3756 13.1491L9.35575 15.1768L7.33591 17.2045C5.94149 18.6043 3.79373 18.7178 2.53875 17.4579C1.28378 16.1981 1.39682 14.042 2.79124 12.6422L4.81111 10.6144" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>),
+    Collections: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}><path d="M18.3334 15.8333C18.3334 16.2754 18.1578 16.6993 17.8453 17.0118C17.5327 17.3244 17.1088 17.5 16.6667 17.5H3.33341C2.89139 17.5 2.46746 17.3244 2.1549 17.0118C1.84234 16.6993 1.66675 16.2754 1.66675 15.8333V4.16667C1.66675 3.72464 1.84234 3.30072 2.1549 2.98816C2.46746 2.67559 2.89139 2.5 3.33341 2.5H7.50008L9.16675 5H16.6667C17.1088 5 17.5327 5.17559 17.8453 5.48816C18.1578 5.80072 18.3334 6.22464 18.3334 6.66667V15.8333Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>),
+    Pages: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>),
+    Blogs: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>),
+    Articles: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>),
+    ChevronRight: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}><path d="M4.45508 9.96001L7.71508 6.70001C8.10008 6.31501 8.10008 5.68501 7.71508 5.30001L4.45508 2.04001" stroke="#A1A1AA" strokeWidth="1.5" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round"/></svg>),
+    VerticalDots: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" {...props}><path opacity="0.5" d="M4 8C4 8.55228 3.55228 9 3 9C2.44772 9 2 8.55228 2 8C2 7.44772 2.44772 7 3 7C3.55228 7 4 7.44772 4 8Z" fill="#18181B"/><path opacity="0.5" d="M9 8C9 8.55228 8.55228 9 8 9C7.44772 9 7 8.55228 7 8C7 7.44772 7.44772 7 8 7C8.55228 7 9 9 9 8Z" fill="#18181B"/><path opacity="0.5" d="M14 8C14 8.55228 13.5523 9 13 9C12.4477 9 12 8.55228 12 8C12 7.44772 12.4477 7 13 7C13.5523 7 14 7.44772 14 8Z" fill="#18181B"/></svg>),
+    Edit: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20" fill="none" {...props}><path d="M12.739 2.62648L11.9666 3.39888L4.86552 10.4999C4.38456 10.9809 4.14407 11.2214 3.93725 11.4865C3.69328 11.7993 3.48412 12.1378 3.31346 12.4959C3.16878 12.7994 3.06123 13.1221 2.84614 13.7674L1.93468 16.5017L1.71188 17.1701C1.60603 17.4877 1.68867 17.8378 1.92536 18.0745C2.16205 18.3112 2.51215 18.3938 2.8297 18.288L3.4981 18.0652L6.23249 17.1537C6.87777 16.9386 7.20042 16.8311 7.50398 16.6864C7.86208 16.5157 8.20052 16.3066 8.51331 16.0626C8.77847 15.8558 9.01895 15.6153 9.49992 15.1343L16.601 8.03328L17.3734 7.26088C18.6531 5.98113 18.6531 3.90624 17.3734 2.62648C16.0936 1.34673 14.0187 1.34673 12.739 2.62648Z" stroke="currentColor" strokeWidth="1.5"/><path d="M11.9665 3.39884C11.9665 3.39884 12.063 5.04019 13.5113 6.48844C14.9595 7.93669 16.6008 8.03324 16.6008 8.03324M3.498 18.0651L1.93457 16.5017" stroke="currentColor" strokeWidth="1.5"/></svg>),
+    Delete: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20" fill="none" {...props}><path d="M17.0832 5H2.9165" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M15.6946 7.08333L15.3113 12.8326C15.1638 15.045 15.09 16.1512 14.3692 16.8256C13.6483 17.5 12.5397 17.5 10.3223 17.5H9.67787C7.46054 17.5 6.35187 17.5 5.63103 16.8256C4.91019 16.1512 4.83644 15.045 4.68895 12.8326L4.30566 7.08333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M7.9165 9.16667L8.33317 13.3333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M12.0832 9.16667L11.6665 13.3333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5.4165 5C5.46307 5 5.48635 5 5.50746 4.99947C6.19366 4.98208 6.79902 4.54576 7.03252 3.90027C7.0397 3.88041 7.04706 3.85832 7.06179 3.81415L7.14269 3.57143C7.21176 3.36423 7.24629 3.26063 7.2921 3.17267C7.47485 2.82173 7.81296 2.57803 8.20368 2.51564C8.30161 2.5 8.41082 2.5 8.62922 2.5H11.3705C11.5889 2.5 11.6981 2.5 11.796 2.51564C12.1867 2.57803 12.5248 2.82173 12.7076 3.17267C12.7534 3.26063 12.7879 3.36423 12.857 3.57143L12.9379 3.81415C12.9526 3.85826 12.96 3.88042 12.9672 3.90027C13.2007 4.54576 13.806 4.98208 14.4922 4.99947C14.5133 5 14.5366 5 14.5832 5" stroke="currentColor" strokeWidth="1.5"/></svg>),
+};
+
+const norm = (s: string) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 export const loader = async ({ request }: any) => {
-    const { admin } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
     
-    // On charge les counts pour les tabs
+    // 1. Theme Check
+    const themesRes = await admin.graphql(`{ themes(first: 5, roles: [MAIN]) { nodes { id name } } }`);
+    const themesJson = await themesRes.json();
+    const activeTheme = themesJson.data?.themes?.nodes?.[0];
+    if (!activeTheme) return { templateData: {}, moCount: 0, mfCount: 0, themeId: null, totalTemplates: 0 };
+    const themeId = activeTheme.id.split('/').pop();
+
+    // 2. Fetch Assets REST (Admin API helper)
+    const assetsRes = await fetch(`https://${session.shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json`, {
+        headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
+    });
+    const assetsJson = await assetsRes.json();
+    const assets = assetsJson.assets || [];
+    const templateAssets = assets.filter((a: any) => a.key.startsWith('templates/') && a.key.endsWith('.json'));
+
+    const templateData: Record<string, any[]> = { product: [], collection: [], page: [], blog: [], article: [] };
+
+    for (const asset of templateAssets) {
+        const parts = asset.key.replace('templates/', '').replace('.json', '').split('.');
+        const type = parts[0];
+        const suffix = parts.length > 1 ? parts.slice(1).join('.') : null;
+        if (templateData[type]) {
+            templateData[type].push({ id: asset.key, key: asset.key, name: suffix || 'Par défaut', suffix: suffix, type: type, updated_at: asset.updated_at, count: 0 });
+        }
+    }
+
+    // 3. STATS LOGIC (ACTIVE + NO GIFT CARD)
+    async function getResourceSuffixes(queryName: string, queryField: string, extraQuery: string = "", includeIsGiftCard: boolean = false) {
+        let hasNextPage = true;
+        let cursor = null;
+        let list: { suffix: string | null, isGiftCard: boolean }[] = [];
+
+        while (hasNextPage) {
+            const query = `query get${queryName}($cursor: String) {
+                ${queryField}(first: 250, after: $cursor ${extraQuery ? `, query: "${extraQuery}"` : ""}) {
+                    pageInfo { hasNextPage endCursor }
+                    edges { node { templateSuffix ${includeIsGiftCard ? 'isGiftCard' : ''} } }
+                }
+            }`;
+            const res = await admin.graphql(query, { variables: { cursor } });
+            const json = await res.json();
+            const data = json.data?.[queryField];
+            if (!data) break;
+
+            list = [...list, ...data.edges.map((e: any) => ({ suffix: e.node.templateSuffix || null, isGiftCard: !!e.node.isGiftCard }))];
+            hasNextPage = data.pageInfo.hasNextPage;
+            cursor = data.pageInfo.endCursor;
+        }
+        return list;
+    }
+
+    const [prodNodes, collNodes, pageNodes, blogNodes, artNodes] = await Promise.all([
+        getResourceSuffixes('Products', 'products', 'status:active', true),
+        getResourceSuffixes('Collections', 'collections'),
+        getResourceSuffixes('Pages', 'pages', 'published_status:published'),
+        getResourceSuffixes('Blogs', 'blogs', 'published_status:published'),
+        getResourceSuffixes('Articles', 'articles', 'published_status:published')
+    ]);
+
+    const productStats = prodNodes.filter(n => !n.isGiftCard);
+    const globalNodes = { product: productStats, collection: collNodes, page: pageNodes, blog: blogNodes, article: artNodes };
+
+    Object.entries(templateData).forEach(([type, templates]) => {
+        const resourceNodes = (globalNodes as any)[type] || [];
+        templates.forEach(t => {
+            t.count = resourceNodes.filter((n: any) => (n.suffix || null) === (t.suffix || null)).length;
+        });
+    });
+
+    // 4. Counts
+    const totalTemplatesCount = Object.values(templateData).flat().length;
     const moAllRes = await admin.graphql(`{ metaobjectDefinitions(first: 50) { nodes { id } } }`);
     const moAllJson = await moAllRes.json();
     const moCount = moAllJson?.data?.metaobjectDefinitions?.nodes?.length || 0;
 
     const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
-    const results = await Promise.all(resources.map(async (r) => {
+    const mfCounts = await Promise.all(resources.map(async (r) => {
         try {
-            const q = `#graphql query { metafieldDefinitions(ownerType: ${r}, first: 50) { nodes { id } } }`;
-            const res = await admin.graphql(q);
+            const res = await admin.graphql(`query { metafieldDefinitions(ownerType: ${r}, first: 50) { nodes { id } } }`);
             const json = await res.json();
             return (json?.data?.metafieldDefinitions?.nodes || []).length;
-        } catch (e) {
-            return 0;
-        }
+        } catch (e) { return 0; }
     }));
-    const mfCount = results.reduce((acc, curr) => acc + curr, 0);
+    const mfCount = mfCounts.reduce((acc, curr) => acc + curr, 0);
 
-    return { moCount, mfCount };
+    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId };
+};
+
+export const action = async ({ request }: any) => {
+    const { admin, session } = await authenticate.admin(request);
+    const fd = await request.formData();
+    const intent = fd.get("intent");
+    const themeId = fd.get("themeId");
+
+    const shop = session.shop;
+    const token = session.accessToken;
+
+    if (intent === "delete") {
+        const keys = JSON.parse(fd.get("keys") as string || "[]");
+        for (const key of keys) {
+            await fetch(`https://${shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json?asset[key]=${encodeURIComponent(key)}`, {
+                method: "DELETE", headers: { "X-Shopify-Access-Token": token!, "Content-Type": "application/json" }
+            });
+        }
+        return { ok: true };
+    }
+
+    if (intent === "rename") {
+        const oldKey = fd.get("oldKey") as string;
+        const newSuffix = fd.get("newSuffix") as string;
+        const type = fd.get("type") as string;
+        const newKey = `templates/${type}.${newSuffix}.json`;
+
+        // Get content
+        const getRes = await fetch(`https://${shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json?asset[key]=${encodeURIComponent(oldKey)}`, {
+            headers: { "X-Shopify-Access-Token": token!, "Content-Type": "application/json" }
+        });
+        const getJson = await getRes.json();
+        const oldAsset = getJson.asset;
+        
+        if (oldAsset) {
+            // Create new
+            await fetch(`https://${shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json`, {
+                method: "PUT",
+                headers: { "X-Shopify-Access-Token": token!, "Content-Type": "application/json" },
+                body: JSON.stringify({ asset: { key: newKey, value: oldAsset.value || oldAsset.attachment } })
+            });
+            // Delete old
+            await fetch(`https://${shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json?asset[key]=${encodeURIComponent(oldKey)}`, {
+                method: "DELETE", headers: { "X-Shopify-Access-Token": token!, "Content-Type": "application/json" }
+            });
+        }
+        return { ok: true };
+    }
+
+    return null;
 };
 
 export default function AppTemplates() {
-    const { moCount, mfCount } = useLoaderData<any>();
+    const { templateData, moCount, mfCount, totalTemplates, themeId } = useLoaderData<any>();
+    const submit = useSubmit();
     const location = useLocation();
+    const revalidator = useRevalidator();
     const [isDevMode, setIsDevMode] = useState(false);
     const [search, setSearch] = useState("");
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "Produits": true, "Pages": true });
+    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+    const [modalData, setModalData] = useState<any>(null);
+    const [newName, setNewName] = useState("");
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [pendingDeleteKeys, setPendingDeleteKeys] = useState<string[]>([]);
+
+    useEffect(() => { setIsDevMode(localStorage.getItem('mm_dev_mode') === 'true'); }, []);
+    const toggleDev = (val: boolean) => { setIsDevMode(val); localStorage.setItem('mm_dev_mode', val ? 'true' : 'false'); };
+
+    const columns = [
+        { key: "name", label: "NOM DU TEMPLATE", className: "mf-col--name" },
+        ...(isDevMode ? [
+            { key: "key", label: (<div className="relative overflow-visible"><div className="mf-dev-badge"><span>&lt;/&gt;</span> Dev Mode</div>CLÉ ASSET</div>), className: "mf-col--key mf-table__header--dev" },
+            { key: "updated", label: "MODIFIÉ LE", className: "mf-col--type mf-table__header--dev" }
+        ] : []),
+        { key: "count", label: "ASSIGNATIONS", className: "mf-col--count" },
+        { key: "actions", label: " ", className: "mf-col--menu" }
+    ];
+
+    const renderCell = (item: any, columnKey: React.Key) => {
+        switch (columnKey) {
+            case "name": return (
+                <div className="mf-cell mf-cell--start gap-3 whitespace-nowrap">
+                    <span className="mf-text--title font-semibold">{item.suffix ? `${item.type}.${item.suffix}` : `${item.type}`}</span>
+                    {!isDevMode && <span className="text-[12px] text-[#A1A1AA] italic">({item.suffix ? `Suffixe: ${item.suffix}` : 'Standard'})</span>}
+                </div>
+            );
+            case "key": return (<div className="mf-cell mf-cell--key"><span className="mf-text--key">{item.key}</span></div>);
+            case "updated": return (<div className="mf-cell mf-cell--type"><span className="text-[12px] text-[#A1A1AA]">{new Date(item.updated_at).toLocaleDateString()}</span></div>);
+            case "count": {
+                const labels: Record<string, string> = { product: 'produit', collection: 'collection', page: 'page', blog: 'blog', article: 'article' };
+                const label = labels[item.type] || item.type;
+                return (
+                    <div className="mf-cell mf-cell--center whitespace-nowrap">
+                        <span className={`mf-badge--count ${item.count > 0 ? 'bg-[#4BB961]/10 text-[#4BB961]' : ''}`}>
+                            {item.count} {label}{item.count > 1 ? 's' : ''}
+                        </span>
+                    </div>
+                );
+            }
+            case "actions": return (
+                <div className="mf-cell mf-cell--center">
+                    <Dropdown classNames={{ content: "mf-dropdown-content" }}>
+                        <DropdownTrigger><Button isIconOnly variant="light" size="sm" className="w-8 h-8"><Icons.VerticalDots /></Button></DropdownTrigger>
+                        <DropdownMenu aria-label="Actions" onAction={(k) => { 
+                            if (k === 'edit') { setNewName(item.suffix || ""); setModalData(item); } 
+                            else if (k === 'delete') { setPendingDeleteKeys([item.key]); setDeleteModalOpen(true); } 
+                        }}>
+                            <DropdownItem key="edit" startContent={<Icons.Edit />} className="mf-dropdown-item"><span className="mf-dropdown-item__title">Editer</span></DropdownItem>
+                            <DropdownItem key="delete" startContent={<Icons.Delete />} className="mf-dropdown-item mf-dropdown-item--delete" isDisabled={!item.suffix}><span className="mf-dropdown-item__title">Supprimer</span></DropdownItem>
+                        </DropdownMenu>
+                    </Dropdown>
+                </div>
+            );
+            default: return null;
+        }
+    };
+
+    const handleOnSelectionChange = (sectionData: any[], keys: any) => {
+        if (keys === "all") {
+            const newSet = new Set(selectedKeys);
+            sectionData.forEach(d => { if(d.suffix) newSet.add(d.key); });
+            setSelectedKeys(newSet);
+        } else {
+            const currentTableIds = new Set(sectionData.map(d => d.key));
+            const otherIds = new Set([...selectedKeys].filter(id => !currentTableIds.has(id)));
+            const final = new Set([...otherIds, ...keys]);
+            setSelectedKeys(final);
+        }
+    };
+
+    const allItems = useMemo(() => Object.values(templateData).flat() as any[], [templateData]);
+    const filteredSearch = useMemo(() => {
+        if (!search?.trim()) return [];
+        const s = norm(search.trim());
+        return allItems.filter((d: any) => norm(d.name).includes(s) || norm(d.key).includes(s) || norm(d.type).includes(s));
+    }, [search, allItems]);
+
+    const sections = [ { type: 'product', label: 'Produits', icon: <Icons.Products /> }, { type: 'collection', label: 'Collections', icon: <Icons.Collections /> }, { type: 'page', label: 'Pages', icon: <Icons.Pages /> }, { type: 'blog', label: 'Blogs', icon: <Icons.Blogs /> }, { type: 'article', label: 'Articles', icon: <Icons.Articles /> } ];
 
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-white animate-in fade-in duration-500">
             <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
                 <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]">
                     <AppBrand />
                     <div className="flex gap-3 items-center">
-                        <DevModeToggle isChecked={isDevMode} onChange={setIsDevMode} />
+                        <DevModeToggle isChecked={isDevMode} onChange={toggleDev} />
+                        <BasilicButton 
+                            variant="flat" 
+                            className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
+                            isLoading={revalidator.state === "loading"}
+                            onPress={() => { setSelectedKeys(new Set()); revalidator.revalidate(); }} 
+                            icon={revalidator.state === "loading" ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
+                        > Refresh </BasilicButton>
                     </div>
                 </div>
 
                 <div className="flex items-center justify-between w-full">
-                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount }} />
+                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: totalTemplates }} />
                     <div className="flex-shrink-0" style={{ width: '320px' }}>
-                        <BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" />
+                        <BasilicSearch value={search} onValueChange={setSearch} placeholder="Rechercher un template..." />
                     </div>
                 </div>
 
-                <div className="flex flex-col items-center justify-center p-20 bg-default-100 rounded-[24px] border-2 border-dashed border-default-300 mt-4">
-                    <div className="text-center max-w-md">
-                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-6">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4BB961" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                <line x1="3" y1="9" x2="21" y2="9"/>
-                                <line x1="9" y1="21" x2="9" y2="9"/>
-                            </svg>
+                {search ? (
+                    filteredSearch.length > 0 ? (
+                        <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="mf-section__header mf-section__header--open"><div className="mf-section__title-group"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span className="mf-section__title">Résultats</span><span className="mf-section__count">{filteredSearch.length}</span></div></div>
+                            <div className="mf-table__base">
+                                <Table aria-label="Résultats" removeWrapper selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ th: `mf-table__header ${isDevMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}>
+                                    <TableHeader columns={columns}>{(c) => <TableColumn key={c.key} align={c.key === "count" || c.key === "actions" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>}</TableHeader>
+                                    <TableBody items={filteredSearch}>{(item) => <TableRow key={item.key}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>}</TableBody>
+                                </Table>
+                            </div>
                         </div>
-                        <h2 className="text-2xl font-bold text-default-800 mb-2">Espace Templates</h2>
-                        <p className="text-default-500 mb-8">Cette section est en cours de développement. Vous pourrez bientôt gérer vos modèles de données et structures réutilisables ici.</p>
-                        <div className="px-6 py-2 bg-white rounded-full border border-default-200 text-[#4BB961] font-bold text-sm inline-block shadow-sm">
-                            Bientôt disponible
-                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-20 bg-[#F4F4F5]/50 rounded-[32px] border-2 border-dashed border-[#E4E4E7]"><div className="text-[17px] font-semibold text-[#18181B]">Aucun résultat trouvé.</div></div>
+                    )
+                ) : (
+                    <div className="space-y-4">
+                        {sections.map(s => {
+                            const data = templateData[s.type] || [];
+                            return (
+                                <div key={s.type} className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className={`mf-section__header ${openSections[s.label] ? 'mf-section__header--open' : 'mf-section__header--closed'}`} onClick={() => setOpenSections(p => ({ ...p, [s.label]: !p[s.label] }))}>
+                                        <div className="mf-section__title-group"><span className="mf-section__icon">{s.icon}</span><span className="mf-section__title">{s.label}</span><span className="mf-section__count">{data.length}</span></div>
+                                        <span className={`mf-section__chevron ${openSections[s.label] ? 'mf-section__chevron--open' : ''}`}><Icons.ChevronRight /></span>
+                                    </div>
+                                    {openSections[s.label] && (
+                                        <div className="mf-table__base">
+                                            <Table aria-label={s.label} removeWrapper selectionMode="multiple" selectedKeys={new Set([...selectedKeys].filter(k => data.some((x: any) => x.key === k)))} onSelectionChange={(k) => handleOnSelectionChange(data, k)} className="mf-table" classNames={{ th: `mf-table__header ${isDevMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}>
+                                                <TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "count" || c.key === "actions" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader>
+                                                <TableBody items={data} emptyContent="Aucun template trouvé.">{(item: any) => (<TableRow key={item.key}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody>
+                                            </Table>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* ACTION BAR */}
+            {selectedKeys.size > 0 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10">
+                        <span className="text-[14px] font-medium text-white">{selectedKeys.size} sélectionnés</span>
+                        <Button onPress={() => { setPendingDeleteKeys(Array.from(selectedKeys)); setDeleteModalOpen(true); }} className="bg-[#F43F5E] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#E11D48] transition-colors gap-2" startContent={<Icons.Delete />}> supprimer </Button>
                     </div>
                 </div>
-            </div>
+            )}
+
+            {/* EDIT MODAL */}
+            <BasilicModal isOpen={!!modalData} onClose={() => setModalData(null)} title="Editer le template" footer={<><Button variant="light" onPress={() => setModalData(null)} className="grow bg-[#F4F4F5]">Annuler</Button><BasilicButton className="grow" isDisabled={!modalData?.suffix} onPress={() => { submit({ intent: 'rename', oldKey: modalData.key, newSuffix: newName, type: modalData.type, themeId: themeId }, { method: 'post' }); setModalData(null); }}>Enregistrer</BasilicButton></>}>
+                <div className="space-y-4 pt-2">
+                    {!modalData?.suffix ? (<div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-amber-800 text-sm"><p className="font-bold mb-1">Modèle par défaut</p><p>Ce modèle système ne peut pas être modifié.</p></div>) : (
+                        <div>
+                            <label htmlFor="newSuffix" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Nouveau suffixe</label>
+                            <div className="flex items-center gap-2"><span className="text-[#A1A1AA] font-mono">{modalData?.type}.</span><input id="newSuffix" value={newName} onChange={e => setNewName(e.target.value)} className="grow h-11 px-4 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] font-semibold" /><span className="text-[#A1A1AA] font-mono">.json</span></div>
+                        </div>
+                    )}
+                </div>
+            </BasilicModal>
+
+            {/* DELETE MODAL */}
+            <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="grow bg-[#F4F4F5]">Annuler</Button><Button color="danger" onPress={() => { submit({ intent: 'delete', keys: JSON.stringify(pendingDeleteKeys), themeId: themeId }, { method: 'post' }); setSelectedKeys(new Set()); setDeleteModalOpen(false); }} className="grow">Confirmer la suppression</Button></>}>
+                <div className="py-2"><p className="text-sm text-[#18181B] font-medium">Voulez-vous vraiment supprimer {pendingDeleteKeys.length} template(s) ?</p></div>
+            </BasilicModal>
         </div>
     );
 }

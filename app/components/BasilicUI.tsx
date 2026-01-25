@@ -315,7 +315,7 @@ export const BasilicDropdown = ({
   );
 };
 
-export const NavigationTabs = ({ activePath, counts, disableNavigation = false }: { activePath: string, counts: { mf: number, mo: number }, disableNavigation?: boolean }) => {
+export const NavigationTabs = ({ activePath, counts, disableNavigation = false }: { activePath: string, counts: { mf: number, mo: number, t?: number }, disableNavigation?: boolean }) => {
   const navigate = useNavigate();
   
   const tabs = [
@@ -325,7 +325,7 @@ export const NavigationTabs = ({ activePath, counts, disableNavigation = false }
     { key: "/app/mo", label: "Objets Méta", count: counts.mo, icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
     )},
-    { key: "/app/templates", label: "Templates", icon: (
+    { key: "/app/templates", label: "Templates", count: counts.t, icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
     )}
   ];

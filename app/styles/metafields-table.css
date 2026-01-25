@@ -154,8 +154,9 @@
 
     background: rgba(212, 212, 216, 0.40);
     border-radius: 100px;
-    padding: 4px 10px;
+    padding: 4px 12px;
     color: #000;
+    white-space: nowrap;
 }
 
 .mf-table__row[data-selected="true"] .mf-badge--count,
@@ -569,7 +570,7 @@ tr[role="rowgroup"]::after {
 
 /* Colonne COUNT */
 .mf-col--count {
-    width: 100px !important;
+    width: 140px !important;
     text-align: center !important;
 }
 
