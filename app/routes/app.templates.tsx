@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
-import { useLoaderData, useSubmit, useRevalidator, useLocation, useActionData } from "react-router";
+import { useState, useMemo } from "react";
+import { useLoaderData, useLocation, useRevalidator } from "react-router";
 import { authenticate, apiVersion } from "../shopify.server";
 import "../styles/metafields-table.css";
-import { AppBrand, DevModeToggle, BasilicButton, BasilicSearch, NavigationTabs, BasilicModal } from "../components/BasilicUI";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
+import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton } from "../components/BasilicUI";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/react";
 
 interface TemplateItem {
     id: string;
@@ -22,9 +22,6 @@ const Icons = {
     Blogs: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>),
     Articles: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>),
     ChevronRight: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}><path d="M4.45508 9.96001L7.71508 6.70001C8.10008 6.31501 8.10008 5.68501 7.71508 5.30001L4.45508 2.04001" stroke="#A1A1AA" strokeWidth="1.5" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round"/></svg>),
-    VerticalDots: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" {...props}><path opacity="0.5" d="M4 8C4 8.55228 3.55228 9 3 9C2.44772 9 2 8.55228 2 8C2 7.44772 2.44772 7 3 7C3.55228 7 4 7.44772 4 8Z" fill="#18181B"/><path opacity="0.5" d="M9 8C9 8.55228 8.55228 9 8 9C7.44772 9 7 8.55228 7 8C7 7.44772 7.44772 7 8 7C8.55228 7 9 9 9 8Z" fill="#18181B"/><path opacity="0.5" d="M14 8C14 8.55228 13.5523 9 13 9C12.4477 9 12 8.55228 12 8C12 7.44772 12.4477 7 13 7C13.5523 7 14 7.44772 14 8Z" fill="#18181B"/></svg>),
-    Edit: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20" fill="none" {...props}><path d="M12.739 2.62648L11.9666 3.39888L4.86552 10.4999C4.38456 10.9809 4.14407 11.2214 3.93725 11.4865C3.69328 11.7993 3.48412 12.1378 3.31346 12.4959C3.16878 12.7994 3.06123 13.1221 2.84614 13.7674L1.93468 16.5017L1.71188 17.1701C1.60603 17.4877 1.68867 17.8378 1.92536 18.0745C2.16205 18.3112 2.51215 18.3938 2.8297 18.288L3.4981 18.0652L6.23249 17.1537C6.87777 16.9386 7.20042 16.8311 7.50398 16.6864C7.86208 16.5157 8.20052 16.3066 8.51331 16.0626C8.77847 15.8558 9.01895 15.6153 9.49992 15.1343L16.601 8.03328L17.3734 7.26088C18.6531 5.98113 18.6531 3.90624 17.3734 2.62648C16.0936 1.34673 14.0187 1.34673 12.739 2.62648Z" stroke="currentColor" strokeWidth="1.5"/><path d="M11.9665 3.39884C11.9665 3.39884 12.063 5.04019 13.5113 6.48844C14.9595 7.93669 16.6008 8.03324 16.6008 8.03324M3.498 18.0651L1.93457 16.5017" stroke="currentColor" strokeWidth="1.5"/></svg>),
-    Delete: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20" fill="none" {...props}><path d="M17.0832 5H2.9165" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M15.6946 7.08333L15.3113 12.8326C15.1638 15.045 15.09 16.1512 14.3692 16.8256C13.6483 17.5 12.5397 17.5 10.3223 17.5H9.67787C7.46054 17.5 6.35187 17.5 5.63103 16.8256C4.91019 16.1512 4.83644 15.045 4.68895 12.8326L4.30566 7.08333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M7.9165 9.16667L8.33317 13.3333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M12.0832 9.16667L11.6665 13.3333" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5.4165 5C5.46307 5 5.48635 5 5.50746 4.99947C6.19366 4.98208 6.79902 4.54576 7.03252 3.90027C7.0397 3.88041 7.04706 3.85832 7.06179 3.81415L7.14269 3.57143C7.21176 3.36423 7.24629 3.26063 7.2921 3.17267C7.47485 2.82173 7.81296 2.57803 8.20368 2.51564C8.30161 2.5 8.41082 2.5 8.62922 2.5H11.3705C11.5889 2.5 11.6981 2.5 11.796 2.51564C12.1867 2.57803 12.5248 2.82173 12.7076 3.17267C12.7534 3.26063 12.7879 3.36423 12.857 3.57143L12.9379 3.81415C12.9526 3.85826 12.96 3.88042 12.9672 3.90027C13.2007 4.54576 13.806 4.98208 14.4922 4.99947C14.5133 5 14.5366 5 14.5832 5" stroke="currentColor" strokeWidth="1.5"/></svg>),
 };
 
 const norm = (s: string) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -39,7 +36,7 @@ export const loader = async ({ request }: { request: Request }) => {
     if (!activeTheme) return { templateData: {}, moCount: 0, mfCount: 0, themeId: null, totalTemplates: 0 };
     const themeId = activeTheme.id.split('/').pop();
 
-    // 2. Fetch Assets REST (Admin API helper)
+    // 2. Fetch Assets REST
     const assetsRes = await fetch(`https://${session.shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json`, {
         headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
     });
@@ -57,7 +54,7 @@ export const loader = async ({ request }: { request: Request }) => {
             templateData[type].push({ 
                 id: asset.key, 
                 key: asset.key, 
-                name: suffix || 'Par défaut', 
+                name: suffix ? `${type}.${suffix}` : `${type} (defaut template)`, 
                 suffix: suffix, 
                 type: type, 
                 updated_at: asset.updated_at, 
@@ -66,7 +63,16 @@ export const loader = async ({ request }: { request: Request }) => {
         }
     }
 
-    // 3. STATS LOGIC (ACTIVE + NO GIFT CARD)
+    // Sort: default first
+    Object.keys(templateData).forEach(type => {
+        templateData[type].sort((a, b) => {
+            if (a.suffix === null) return -1;
+            if (b.suffix === null) return 1;
+            return a.name.localeCompare(b.name);
+        });
+    });
+
+    // 3. STATS LOGIC
     async function getResourceSuffixes(queryName: string, queryField: string, extraQuery: string = "", includeIsGiftCard: boolean = false) {
         let hasNextPage = true;
         let cursor = null;
@@ -110,188 +116,71 @@ export const loader = async ({ request }: { request: Request }) => {
     });
 
     // 4. Counts
-    const totalTemplatesCount = Object.values(templateData).flat().length;
-    const moAllRes = await admin.graphql(`{ metaobjectDefinitions(first: 50) { nodes { id } } }`);
+    const managedTypes = ['product', 'collection', 'page', 'blog', 'article'];
+    const totalTemplatesCount = managedTypes.reduce((acc, type) => acc + (templateData[type]?.length || 0), 0);
+    const moAllRes = await admin.graphql(`{ metaobjectDefinitions(first: 250) { nodes { id } } }`);
     const moAllJson = await moAllRes.json();
     const moCount = moAllJson?.data?.metaobjectDefinitions?.nodes?.length || 0;
 
     const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
     const mfCounts = await Promise.all(resources.map(async (r) => {
         try {
-            const res = await admin.graphql(`query { metafieldDefinitions(ownerType: ${r}, first: 50) { nodes { id } } }`);
+            const res = await admin.graphql(`query { metafieldDefinitions(ownerType: ${r}, first: 250) { nodes { id } } }`);
             const json = await res.json();
             return (json?.data?.metafieldDefinitions?.nodes || []).length;
         } catch (e) { return 0; }
     }));
     const mfCount = mfCounts.reduce((acc, curr) => acc + curr, 0);
 
-    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId };
-};
+    // 5. Media Count
+    const filesRes = await admin.graphql(`query { files(first: 100) { nodes { id } } }`);
+    const mediaCount = (await filesRes.json()).data?.files?.nodes?.length || 0;
 
-export const action = async ({ request }: { request: Request }) => {
-  const { session } = await authenticate.admin(request);
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-  
-  // On ignore l'ID envoyé par le front, on va scanner nous-mêmes
-  const API_VERSION = "2024-10";
-  
-  // --- ACTION : SUPPRIMER (Mode Recherche Globale) ---
-  if (intent === "delete") {
-    const keys = JSON.parse(formData.get("keys") as string || "[]") as string[];
-    const targetKey = keys[0]; // On se concentre sur le premier fichier sélectionné
-    let deletedFrom = [];
-
-    try {
-      // 1. On récupère TOUS les thèmes (Live et Brouillons)
-      const themesRes = await fetch(`https://${session.shop}/admin/api/${API_VERSION}/themes.json`, {
-        headers: { "X-Shopify-Access-Token": session.accessToken! }
-      });
-      const themesData = await themesRes.json();
-      const themes = themesData.themes || [];
-
-      console.log(`[DEBUG] Recherche du fichier ${targetKey} dans ${themes.length} thèmes...`);
-
-      // 2. On boucle sur chaque thème pour trouver le fichier
-      for (const theme of themes) {
-        // On teste si le fichier existe sur ce thème
-        const assetCheckUrl = `https://${session.shop}/admin/api/${API_VERSION}/themes/${theme.id}/assets.json?asset[key]=${encodeURIComponent(targetKey)}`;
-        
-        const checkRes = await fetch(assetCheckUrl, {
-            headers: { "X-Shopify-Access-Token": session.accessToken! }
-        });
-        
-        // Si checkRes.ok est vrai, c'est que le fichier EXISTE ici !
-        if (checkRes.ok) {
-            console.log(`[TROUVÉ] Le fichier est sur le thème "${theme.name}" (ID: ${theme.id}). Suppression...`);
-            
-            // On supprime
-            const delRes = await fetch(assetCheckUrl, {
-                method: "DELETE",
-                headers: { "X-Shopify-Access-Token": session.accessToken! }
-            });
-
-            if (delRes.ok) {
-                deletedFrom.push(theme.name);
-            } else {
-                const err = await delRes.text();
-                throw new Error(`Erreur suppression sur ${theme.name} : ${err}`);
-            }
-        }
-      }
-
-      if (deletedFrom.length > 0) {
-        return { ok: true, message: `Succès ! Fichier supprimé du thème : ${deletedFrom.join(", ")}` };
-      } else {
-        return { ok: false, error: `Le fichier ${targetKey} est INTROUVABLE sur aucun de tes ${themes.length} thèmes.` };
-      }
-
-    } catch (e: any) {
-      return { ok: false, error: e.message };
-    }
-  }
-
-  // --- RENOMMER (On laisse tel quel pour l'instant) ---
-  if (intent === "rename") {
-     return { ok: false, error: "Teste d'abord la suppression pour valider la connexion." };
-  }
-
-  return null;
+    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId, mediaCount };
 };
 
 export default function AppTemplates() {
-    const { templateData, moCount, mfCount, totalTemplates, themeId } = useLoaderData<typeof loader>();
-    const actionData = useActionData<any>();
-    const submit = useSubmit();
+    const { templateData, moCount, mfCount, totalTemplates, mediaCount } = useLoaderData<typeof loader>();
     const location = useLocation();
     const revalidator = useRevalidator();
-    const [isDevMode, setIsDevMode] = useState(false);
     const [search, setSearch] = useState("");
-    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "Produits": true, "Pages": true });
-    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-    const [modalData, setModalData] = useState<TemplateItem | null>(null);
-    const [newName, setNewName] = useState("");
-    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-    const [pendingDeleteKeys, setPendingDeleteKeys] = useState<string[]>([]);
-
-    useEffect(() => { setIsDevMode(localStorage.getItem('mm_dev_mode') === 'true'); }, []);
-    const toggleDev = (val: boolean) => { setIsDevMode(val); localStorage.setItem('mm_dev_mode', val ? 'true' : 'false'); };
-
-    useEffect(() => {
-        if (actionData?.error) {
-            alert("Erreur : " + actionData.error);
-        }
-        if (actionData?.ok && actionData?.message) {
-            alert("Succès : " + actionData.message);
-        }
-    }, [actionData]);
+    const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "Produits": true });
 
     const columns = [
-        { key: "name", label: "NOM DU TEMPLATE", className: "mf-col--name" },
-        ...(isDevMode ? [
-            { key: "key", label: (<div className="relative overflow-visible"><div className="mf-dev-badge"><span>&lt;/&gt;</span> Dev Mode</div>CLÉ ASSET</div>), className: "mf-col--key mf-table__header--dev" },
-            { key: "updated", label: "MODIFIÉ LE", className: "mf-col--type mf-table__header--dev" }
-        ] : []),
-        { key: "count", label: "ASSIGNATIONS", className: "mf-col--count" },
-        { key: "actions", label: " ", className: "mf-col--menu" }
+        { key: "name", label: "NOM DU TEMPLATE", className: "grow" },
+        { key: "updated", label: "DATE DE CRÉATION", className: "w-[180px] whitespace-nowrap" },
+        { key: "count", label: "ASSIGNATIONS", className: "w-[150px] whitespace-nowrap" }
     ];
 
     const renderCell = (item: TemplateItem, columnKey: React.Key) => {
         switch (columnKey) {
             case "name": return (
-                <div className="mf-cell mf-cell--start gap-3 whitespace-nowrap">
-                    <span className="mf-text--title font-semibold">{item.suffix ? `${item.type}.${item.suffix}` : `${item.type}`}</span>
-                    {!isDevMode && <span className="text-[12px] text-[#A1A1AA] italic">({item.suffix ? `Suffixe: ${item.suffix}` : 'Standard'})</span>}
+                <div className="mf-cell mf-cell--multi">
+                    <span className="mf-text--title">
+                        {item.suffix ? `${item.type}.${item.suffix}` : item.type}
+                    </span>
+                    <span className="mf-text--desc">
+                        {!item.suffix ? "(defaut template)" : item.key}
+                    </span>
                 </div>
             );
-            case "key": return (<div className="mf-cell mf-cell--key"><span className="mf-text--key">{item.key}</span></div>);
-            case "updated": return (<div className="mf-cell mf-cell--type"><span className="text-[12px] text-[#A1A1AA]">{new Date(item.updated_at).toLocaleDateString()}</span></div>);
+            case "updated": return (
+                <div className="mf-cell mf-cell--start">
+                    <span className="text-[14px] text-[#71717A]">{new Date(item.updated_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                </div>
+            );
             case "count": {
                 const labels: Record<string, string> = { product: 'produit', collection: 'collection', page: 'page', blog: 'blog', article: 'article' };
                 const label = labels[item.type] || item.type;
                 return (
                     <div className="mf-cell mf-cell--center whitespace-nowrap">
-                        <span className={`mf-badge--count ${item.count > 0 ? 'bg-[#4BB961]/10 text-[#4BB961]' : ''}`}>
+                        <span className="mf-badge--count">
                             {item.count} {label}{item.count > 1 ? 's' : ''}
                         </span>
                     </div>
                 );
             }
-            case "actions": return (
-                <div className="mf-cell mf-cell--center">
-                    <Dropdown classNames={{ content: "mf-dropdown-content" }}>
-                        <DropdownTrigger><Button isIconOnly variant="light" size="sm" className="w-8 h-8"><Icons.VerticalDots /></Button></DropdownTrigger>
-                        <DropdownMenu aria-label="Actions" onAction={(k) => { 
-                            console.log("Dropdown action:", k, "for item:", item.key);
-                            if (k === 'edit') { 
-                                setNewName(item.suffix || ""); 
-                                setModalData(item); 
-                            } 
-                            else if (k === 'delete') { 
-                                setPendingDeleteKeys([item.key]); 
-                                setDeleteModalOpen(true); 
-                            } 
-                        }}>
-                            <DropdownItem key="edit" startContent={<Icons.Edit />} className="mf-dropdown-item"><span className="mf-dropdown-item__title">Editer</span></DropdownItem>
-                            <DropdownItem key="delete" startContent={<Icons.Delete />} className="mf-dropdown-item mf-dropdown-item--delete" isDisabled={!item.suffix}><span className="mf-dropdown-item__title">Supprimer</span></DropdownItem>
-                        </DropdownMenu>
-                    </Dropdown>
-                </div>
-            );
             default: return null;
-        }
-    };
-
-    const handleOnSelectionChange = (sectionData: TemplateItem[], keys: unknown) => {
-        if (keys === "all") {
-            const newSet = new Set(selectedKeys);
-            sectionData.forEach(d => { if(d.suffix) newSet.add(d.key); });
-            setSelectedKeys(newSet);
-        } else if (keys instanceof Set) {
-            const currentTableIds = new Set(sectionData.map(d => d.key));
-            const otherIds = new Set([...selectedKeys].filter(id => !currentTableIds.has(id)));
-            const final = new Set([...otherIds, ...Array.from(keys as Set<string>)]);
-            setSelectedKeys(final);
         }
     };
 
@@ -302,27 +191,32 @@ export default function AppTemplates() {
         return allItems.filter((d: TemplateItem) => norm(d.name).includes(s) || norm(d.key).includes(s) || norm(d.type).includes(s));
     }, [search, allItems]);
 
-    const sections = [ { type: 'product', label: 'Produits', icon: <Icons.Products /> }, { type: 'collection', label: 'Collections', icon: <Icons.Collections /> }, { type: 'page', label: 'Pages', icon: <Icons.Pages /> }, { type: 'blog', label: 'Blogs', icon: <Icons.Blogs /> }, { type: 'article', label: 'Articles', icon: <Icons.Articles /> } ];
+    const sections = [ 
+        { type: 'product', label: 'Produits', icon: <Icons.Products /> }, 
+        { type: 'collection', label: 'Collections', icon: <Icons.Collections /> }, 
+        { type: 'page', label: 'Pages', icon: <Icons.Pages /> }, 
+        { type: 'blog', label: 'Blogs', icon: <Icons.Blogs /> }, 
+        { type: 'article', label: 'Articles', icon: <Icons.Articles /> } 
+    ];
 
     return (
         <div className="min-h-screen bg-white animate-in fade-in duration-500">
             <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
                 <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]">
                     <AppBrand />
-                    <div className="flex gap-3 items-center">
-                        <DevModeToggle isChecked={isDevMode} onChange={toggleDev} />
-                        <BasilicButton 
-                            variant="flat" 
-                            className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
-                            isLoading={revalidator.state === "loading"}
-                            onPress={() => { setSelectedKeys(new Set()); revalidator.revalidate(); }} 
-                            icon={revalidator.state === "loading" ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
-                        > Refresh </BasilicButton>
-                    </div>
+                    <BasilicButton 
+                        variant="flat" 
+                        className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
+                        isLoading={revalidator.state === "loading"}
+                        onPress={() => revalidator.revalidate()} 
+                        icon={revalidator.state === "loading" ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
+                    >
+                        Scan Code
+                    </BasilicButton>
                 </div>
 
                 <div className="flex items-center justify-between w-full">
-                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: totalTemplates }} />
+                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount }} />
                     <div className="flex-shrink-0" style={{ width: '320px' }}>
                         <BasilicSearch value={search} onValueChange={setSearch} placeholder="Rechercher un template..." />
                     </div>
@@ -331,10 +225,16 @@ export default function AppTemplates() {
                 {search ? (
                     filteredSearch.length > 0 ? (
                         <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="mf-section__header mf-section__header--open"><div className="mf-section__title-group"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span className="mf-section__title">Résultats</span><span className="mf-section__count">{filteredSearch.length}</span></div></div>
+                            <div className="mf-section__header mf-section__header--open">
+                                <div className="mf-section__title-group">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                    <span className="mf-section__title">Résultats</span>
+                                    <span className="mf-section__count">{filteredSearch.length}</span>
+                                </div>
+                            </div>
                             <div className="mf-table__base">
-                                <Table aria-label="Résultats" removeWrapper selectionMode="multiple" selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ th: `mf-table__header ${isDevMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}>
-                                    <TableHeader columns={columns}>{(c) => <TableColumn key={c.key} align={c.key === "count" || c.key === "actions" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>}</TableHeader>
+                                <Table aria-label="Résultats" removeWrapper selectionMode="none" className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
+                                    <TableHeader columns={columns}>{(c) => <TableColumn key={c.key} align={c.key === "count" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>}</TableHeader>
                                     <TableBody items={filteredSearch}>{(item) => <TableRow key={item.key}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>}</TableBody>
                                 </Table>
                             </div>
@@ -345,17 +245,19 @@ export default function AppTemplates() {
                 ) : (
                     <div className="space-y-4">
                         {sections.map(s => {
-                            const data = templateData[s.type] || [];
+                            const data = (templateData as Record<string, any[]>)[s.type] || [];
+                            if (data.length === 0) return null;
+                            const isOpen = openSections[s.label];
                             return (
                                 <div key={s.type} className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className={`mf-section__header ${openSections[s.label] ? 'mf-section__header--open' : 'mf-section__header--closed'}`} onClick={() => setOpenSections(p => ({ ...p, [s.label]: !p[s.label] }))}>
+                                    <div className={`mf-section__header ${isOpen ? 'mf-section__header--open' : 'mf-section__header--closed'}`} onClick={() => setOpenSections(p => ({ ...p, [s.label]: !p[s.label] }))}>
                                         <div className="mf-section__title-group"><span className="mf-section__icon">{s.icon}</span><span className="mf-section__title">{s.label}</span><span className="mf-section__count">{data.length}</span></div>
-                                        <span className={`mf-section__chevron ${openSections[s.label] ? 'mf-section__chevron--open' : ''}`}><Icons.ChevronRight /></span>
+                                        <span className={`mf-section__chevron ${isOpen ? 'mf-section__chevron--open' : ''}`}><Icons.ChevronRight /></span>
                                     </div>
-                                    {openSections[s.label] && (
+                                    {isOpen && (
                                         <div className="mf-table__base">
-                                            <Table aria-label={s.label} removeWrapper selectionMode="multiple" selectedKeys={new Set([...selectedKeys].filter(k => data.some((x: any) => x.key === k)))} onSelectionChange={(k) => handleOnSelectionChange(data, k)} className="mf-table" classNames={{ th: `mf-table__header ${isDevMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}>
-                                                <TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "count" || c.key === "actions" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader>
+                                            <Table aria-label={s.label} removeWrapper selectionMode="none" className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
+                                                <TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "count" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader>
                                                 <TableBody items={data} emptyContent="Aucun template trouvé.">{(item: any) => (<TableRow key={item.key}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody>
                                             </Table>
                                         </div>
@@ -366,83 +268,6 @@ export default function AppTemplates() {
                     </div>
                 )}
             </div>
-
-            {/* ACTION BAR */}
-            {selectedKeys.size > 0 && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
-                    <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10">
-                        <span className="text-[14px] font-medium text-white">{selectedKeys.size} sélectionnés</span>
-                        <Button onPress={() => { setPendingDeleteKeys(Array.from(selectedKeys)); setDeleteModalOpen(true); }} className="bg-[#F43F5E] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#E11D48] transition-colors gap-2" startContent={<Icons.Delete />}> supprimer </Button>
-                    </div>
-                </div>
-            )}
-
-            {/* EDIT MODAL */}
-            <BasilicModal 
-                isOpen={!!modalData} 
-                onClose={() => setModalData(null)} 
-                title="Editer le template" 
-                footer={
-                    <>
-                        <Button variant="light" onPress={() => setModalData(null)} className="grow bg-[#F4F4F5]">Annuler</Button>
-                        <BasilicButton 
-                            className="grow" 
-                            isDisabled={!newName || newName === modalData?.suffix} 
-                            onPress={() => { 
-                                if (modalData) {
-                                    submit({ 
-                                        intent: 'rename', 
-                                        oldKey: modalData.key, 
-                                        newSuffix: newName, 
-                                        type: modalData.type, 
-                                        themeId: themeId || ""
-                                    }, { method: 'post' }); 
-                                    setModalData(null); 
-                                }
-                            }}
-                        >
-                            Enregistrer
-                        </BasilicButton>
-                    </>
-                }
-            >
-                <div className="space-y-4 pt-2">
-                    {modalData && !modalData.suffix ? (
-                        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-amber-800 text-sm">
-                            <p className="font-bold mb-1">Modèle par défaut</p>
-                            <p>Ce modèle système ne peut pas être renommé car il est requis par Shopify. Vous pouvez cependant créer un nouveau template basé sur celui-ci via l&apos;administration Shopify.</p>
-                        </div>
-                    ) : (
-                        <div>
-                            <label htmlFor="newSuffix" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Nouveau suffixe</label>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[#A1A1AA] font-mono">{modalData?.type}.</span>
-                                <input 
-                                    id="newSuffix" 
-                                    value={newName} 
-                                    onChange={e => setNewName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))} 
-                                    className="grow h-11 px-4 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] font-semibold" 
-                                />
-                                <span className="text-[#A1A1AA] font-mono">.json</span>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </BasilicModal>
-
-            {/* DELETE MODAL */}
-            <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="grow bg-[#F4F4F5]">Annuler</Button><Button color="danger" onPress={() => { 
-                console.log("Confirm Delete clicked", { pendingDeleteKeys, themeId });
-                if (!themeId) {
-                    alert("ID du thème manquant.");
-                    return;
-                }
-                submit({ intent: 'delete', keys: JSON.stringify(pendingDeleteKeys), themeId: themeId.toString() }, { method: 'post' }); 
-                setSelectedKeys(new Set()); 
-                setDeleteModalOpen(false); 
-            }} className="grow">Confirmer la suppression</Button></>}>
-                <div className="py-2"><p className="text-sm text-[#18181B] font-medium">Voulez-vous vraiment supprimer {pendingDeleteKeys.length} template(s) ?</p></div>
-            </BasilicModal>
         </div>
     );
 }

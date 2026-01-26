@@ -26,3 +26,20 @@ scopes = "write_products,read_themes"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
+
+[navigation]
+[[navigation.left]]
+label = "Champs Méta (MF)"
+link = "/app/mf"
+
+[[navigation.left]]
+label = "Objets Méta (MO)"
+link = "/app/mo"
+
+[[navigation.left]]
+label = "Templates"
+link = "/app/templates"
+
+[[navigation.left]]
+label = "Médias"
+link = "/app/media"

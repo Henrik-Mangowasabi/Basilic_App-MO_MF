@@ -332,7 +332,6 @@ tr[role="rowgroup"]::after {
     height: 44px;
     padding: 12px 8px;
     position: relative;
-    width: fit-content;
 
     color: #71717A;
     font-family: Inter;
@@ -370,6 +369,34 @@ tr[role="rowgroup"]::after {
 .mf-table__header:last-child {
     border-top-right-radius: 8px;
     border-bottom-right-radius: 0;
+}
+
+/* Reset pour la page templates : on retire le bloquage à 40px du premier header et de la première cellule */
+.mf-table--templates .mf-table__header:first-child,
+.mf-table--templates .mf-table__cell:first-child {
+    width: auto !important;
+    display: table-cell !important;
+    justify-content: unset;
+    align-items: unset;
+}
+
+/* Fix interactions page templates */
+.mf-table--templates .mf-table__row, 
+.mf-table--templates .mf-table__header,
+.mf-table--templates .mf-table__row td,
+.mf-table--templates .mf-table__row *,
+.mf-table--templates .mf-table__row .mf-text--title,
+.mf-table--templates .mf-table__row .mf-text--desc {
+    cursor: default !important;
+}
+
+.mf-table--templates .mf-table__row:hover {
+    background-color: rgba(0, 111, 238, 0.20) !important;
+}
+
+/* Badge background on hover match other pages */
+.mf-table--templates .mf-table__row:hover .mf-badge--count {
+    background: rgba(0, 111, 238, 0.20) !important;
 }
 
 /* Forcer les coins du bas à 0 */

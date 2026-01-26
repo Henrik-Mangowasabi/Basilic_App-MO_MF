@@ -35,7 +35,7 @@ export default function App() {
               <Link to="/app/mf">Champs Méta (MF)</Link>
               <Link to="/app/mo">Objets Méta (MO)</Link>
               <Link to="/app/templates">Templates</Link>
-              <Link to="/app/uikit">UI KIT</Link>
+              <Link to="/app/media">Médias</Link>
             </NavMenu>
             <Outlet />
           </div>
