@@ -6,15 +6,25 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { MemorySessionStorage } from "@shopify/shopify-app-session-storage-memory";
 
+import { restResources } from "@shopify/shopify-api/rest/admin/2024-10";
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
-  apiVersion: ApiVersion.October25,
+  
+  // --- CORRECTION MAJEURE ICI ---
+  // On force la version exacte pour qu'elle corresponde à l'import ci-dessus
+  apiVersion: "2024-10" as ApiVersion,
+  
   scopes: process.env.SCOPES?.split(","),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new MemorySessionStorage(),
   distribution: AppDistribution.AppStore,
+  
+  // Maintenant que les versions correspondent, ceci va fonctionner :
+  restResources, 
+  
   future: {
     expiringOfflineAccessTokens: true,
   },
@@ -24,7 +34,7 @@ const shopify = shopifyApp({
 });
 
 export default shopify;
-export const apiVersion = ApiVersion.October25;
+export const apiVersion = "2024-10" as ApiVersion; // Alignement ici aussi
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
 export const authenticate = shopify.authenticate;
 export const unauthenticated = shopify.unauthenticated;
