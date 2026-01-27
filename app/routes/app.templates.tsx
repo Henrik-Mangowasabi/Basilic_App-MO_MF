@@ -118,9 +118,22 @@ export const loader = async ({ request }: { request: Request }) => {
     // 4. Counts
     const managedTypes = ['product', 'collection', 'page', 'blog', 'article'];
     const totalTemplatesCount = managedTypes.reduce((acc, type) => acc + (templateData[type]?.length || 0), 0);
-    const moAllRes = await admin.graphql(`{ metaobjectDefinitions(first: 250) { nodes { id } } }`);
-    const moAllJson = await moAllRes.json();
-    const moCount = moAllJson?.data?.metaobjectDefinitions?.nodes?.length || 0;
+    
+    // Metaobjects Count - Count all with pagination
+    let moCount = 0;
+    let hasNextMoPage = true;
+    let moCursor: string | null = null;
+    while (hasNextMoPage) {
+        const moAllRes = await admin.graphql(`query getMetaobjectDefinitionsCount($cursor: String) { metaobjectDefinitions(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: moCursor } });
+        const moAllJson: any = await moAllRes.json();
+        const data: any = moAllJson.data?.metaobjectDefinitions;
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            moCount += data.nodes.length;
+        }
+        hasNextMoPage = data?.pageInfo?.hasNextPage || false;
+        moCursor = data?.pageInfo?.endCursor || null;
+        if (moCount >= 10000) break; // Safety limit
+    }
 
     const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
     const mfCounts = await Promise.all(resources.map(async (r) => {
@@ -132,9 +145,21 @@ export const loader = async ({ request }: { request: Request }) => {
     }));
     const mfCount = mfCounts.reduce((acc, curr) => acc + curr, 0);
 
-    // 5. Media Count
-    const filesRes = await admin.graphql(`query { files(first: 100) { nodes { id } } }`);
-    const mediaCount = (await filesRes.json()).data?.files?.nodes?.length || 0;
+    // 5. Media Count - Count all files with pagination
+    let mediaCount = 0;
+    let hasNextFilePage = true;
+    let fileCursor: string | null = null;
+    while (hasNextFilePage) {
+        const filesRes = await admin.graphql(`query getFilesCount($cursor: String) { files(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: fileCursor } });
+        const filesJson: any = await filesRes.json();
+        const data: any = filesJson.data?.files;
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            mediaCount += data.nodes.length;
+        }
+        hasNextFilePage = data?.pageInfo?.hasNextPage || false;
+        fileCursor = data?.pageInfo?.endCursor || null;
+        if (mediaCount >= 10000) break; // Safety limit
+    }
 
     return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId, mediaCount };
 };

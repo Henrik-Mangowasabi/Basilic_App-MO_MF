@@ -20,9 +20,55 @@ const translateType = (t: string) => (!t ? '-' : t.startsWith('list.') ? `Liste 
 
 export const loader = async ({ request }: any) => {
     const { admin } = await authenticate.admin(request);
-    const moRes = await admin.graphql(`query { metaobjectDefinitions(first: 250) { nodes { id name type description metaobjectsCount fieldDefinitions { name key type { name } required } } } }`);
-    const moJson = await moRes.json();
-    const moData = (moJson.data?.metaobjectDefinitions?.nodes || []).map((n: any) => ({ ...n, count: n.metaobjectsCount, fieldsCount: n.fieldDefinitions.length, fieldDefinitions: n.fieldDefinitions.map((f: any) => ({ ...f, typeDisplay: translateType(f.type?.name) })), fullKey: n.type, code_usage: 'Non' }));
+    
+    // Fetch ALL Metaobject Definitions with pagination
+    let allMoNodes: any[] = [];
+    let hasNextMoPage = true;
+    let moCursor: string | null = null;
+    
+    while (hasNextMoPage) {
+        const moRes = await admin.graphql(`
+            query getMetaobjectDefinitions($cursor: String) {
+                metaobjectDefinitions(first: 250, after: $cursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes {
+                        id
+                        name
+                        type
+                        description
+                        metaobjectsCount
+                        fieldDefinitions {
+                            name
+                            key
+                            type { name }
+                            required
+                        }
+                    }
+                }
+            }
+        `, { variables: { cursor: moCursor } });
+        
+        const moJson: any = await moRes.json();
+        const data: any = moJson.data?.metaobjectDefinitions;
+        
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            allMoNodes = [...allMoNodes, ...data.nodes];
+        }
+        
+        hasNextMoPage = data?.pageInfo?.hasNextPage || false;
+        moCursor = data?.pageInfo?.endCursor || null;
+        
+        // Error handling
+        if (moJson.errors) {
+            console.error("Error fetching metaobject definitions:", moJson.errors);
+            break;
+        }
+        
+        // Safety limit
+        if (allMoNodes.length >= 10000) break;
+    }
+    
+    const moData = allMoNodes.map((n: any) => ({ ...n, count: n.metaobjectsCount, fieldsCount: n.fieldDefinitions.length, fieldDefinitions: n.fieldDefinitions.map((f: any) => ({ ...f, typeDisplay: translateType(f.type?.name) })), fullKey: n.type, code_usage: 'Non' }));
     const shopRes = await admin.graphql(`{ shop { name myshopifyDomain } }`);
     const shopJson = await shopRes.json();
     const shopDomain = shopJson?.data?.shop?.myshopifyDomain || '';
@@ -48,9 +94,21 @@ export const loader = async ({ request }: any) => {
         }).length;
     }
 
-    // Media Count
-    const filesRes = await admin.graphql(`query { files(first: 100) { nodes { id } } }`);
-    const mediaCount = (await filesRes.json()).data?.files?.nodes?.length || 0;
+    // Media Count - Count all files with pagination
+    let mediaCount = 0;
+    let hasNextFilePage = true;
+    let fileCursor: string | null = null;
+    while (hasNextFilePage) {
+        const filesRes = await admin.graphql(`query getFilesCount($cursor: String) { files(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: fileCursor } });
+        const filesJson: any = await filesRes.json();
+        const data: any = filesJson.data?.files;
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            mediaCount += data.nodes.length;
+        }
+        hasNextFilePage = data?.pageInfo?.hasNextPage || false;
+        fileCursor = data?.pageInfo?.endCursor || null;
+        if (mediaCount >= 10000) break; // Safety limit
+    }
 
     return { shopDomain, moData, mfCount, moCount: moData.length, totalTemplates, mediaCount };
 };
@@ -59,7 +117,45 @@ export const action = async ({ request }: any) => {
     const { admin } = await authenticate.admin(request);
     const formData = await request.formData();
     const actionType = formData.get("action");
-    if (formData.get("intent") === "get_entries") { const type = formData.get("type") as string; const res = await admin.graphql(`query GetMOEntries($type: String!) { metaobjects(type: $type, first: 50) { nodes { id handle displayName referencedBy(first: 1) { edges { node { __typename } } } fields { key value } } } }`, { variables: { type } }); const json = await res.json(); const entries = (json.data?.metaobjects?.nodes || []).map((n: any) => { let obj: any = { id: n.id, handle: n.handle, displayName: n.displayName || n.handle, refCount: n.referencedBy?.edges?.length || 0 }; n.fields?.forEach((f: any) => { obj[f.key] = f.value || '-'; }); return obj; }); return { ok: true, type, entries }; }
+    if (formData.get("intent") === "get_entries") { 
+        const type = formData.get("type") as string; 
+        const res = await admin.graphql(`
+            query GetMOEntries($type: String!) { 
+                metaobjects(type: $type, first: 50) { 
+                    nodes { 
+                        id 
+                        handle 
+                        displayName 
+                        referencedBy(first: 250) { 
+                            edges { 
+                                node { 
+                                    __typename 
+                                } 
+                            } 
+                        } 
+                        fields { 
+                            key 
+                            value 
+                        } 
+                    } 
+                } 
+            }
+        `, { variables: { type } }); 
+        const json = await res.json(); 
+        const entries = (json.data?.metaobjects?.nodes || []).map((n: any) => { 
+            let obj: any = { 
+                id: n.id, 
+                handle: n.handle, 
+                displayName: n.displayName || n.handle, 
+                refCount: n.referencedBy?.edges?.length || 0 
+            }; 
+            n.fields?.forEach((f: any) => { 
+                obj[f.key] = f.value || '-'; 
+            }); 
+            return obj; 
+        }); 
+        return { ok: true, type, entries }; 
+    }
     if (actionType === "update_desc") { await admin.graphql(`mutation UpdateMOD($id: ID!, $name: String!, $description: String) { metaobjectDefinitionUpdate(id: $id, definition: { name: $name, description: $description }) { userErrors { message field } } }`, { variables: { id: formData.get("id"), name: formData.get("name"), description: formData.get("description") } }); return { ok: true }; }
     if (actionType === "update_fields") { const fields = JSON.parse(formData.get("fields") as string); await admin.graphql(`mutation UpdateFields($id: ID!, $fields: [MetaobjectFieldDefinitionOperationInput!]!) { metaobjectDefinitionUpdate(id: $id, definition: { fieldDefinitions: $fields }) { userErrors { message field } } }`, { variables: { id: formData.get("id"), fields } }); return { ok: true }; }
     if (actionType === "delete_item") { const ids = JSON.parse(formData.get("ids") as string || "[]"); for (const id of ids) await admin.graphql(`mutation DeleteMOD($id: ID!) { metaobjectDefinitionDelete(id: $id) { userErrors { message } } }`, { variables: { id } }); return { ok: true }; }
@@ -174,10 +270,12 @@ export default function AppMo() {
         { key: "name", label: "NOM DE L'OBJET", className: "mf-col--name" },
         ...(devMode ? [
             { key: "fullKey", label: (<div className="relative overflow-visible"><div className="mf-dev-badge"><span>&lt;/&gt;</span> Dev Mode</div>CLÉ TECH</div>), className: "mf-col--key mf-table__header--dev" },
-            { key: "fields", label: "STRUCTURE", className: "mf-col--type mf-table__header--dev" },
-            { key: "code_usage", label: "CODE", className: "mf-col--code mf-table__header--dev" }
-        ] : []),
-        { key: "count", label: "ENTRÉES", className: "mf-col--count" },
+            { key: "fields", label: "CHAMPS", className: "mf-col--type mf-table__header--dev" },
+            { key: "code_usage", label: "CODE", className: "mf-col--code mf-table__header--dev" },
+            { key: "count", label: "ENTRÉES", className: "mf-col--count mf-table__header--dev" }
+        ] : [
+            { key: "count", label: "ENTRÉES", className: "mf-col--count" }
+        ]),
         { key: "actions", label: "LIEN", className: "mf-col--actions" },
         { key: "menu", label: " ", className: "mf-col--menu" }
     ];
@@ -505,11 +603,9 @@ export default function AppMo() {
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
                                                     <div className={`text-[15px] font-bold transition-all ${isSelected ? 'text-[#4BB961]' : 'text-[#18181B]'} truncate`}>{e.displayName}</div>
-                                                    {e.refCount > 0 && (
-                                                        <span className="px-1.5 py-0.5 bg-[#4BB961]/10 text-[#4BB961] text-[10px] font-black rounded-md">
-                                                            +{e.refCount}
-                                                        </span>
-                                                    )}
+                                                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-md ${e.refCount > 0 ? 'bg-[#4BB961]/10 text-[#4BB961]' : 'bg-[#E4E4E7]/50 text-[#71717A]'}`}>
+                                                        {e.refCount} référence{e.refCount > 1 ? 's' : ''}
+                                                    </span>
                                                 </div>
                                                 <div className="text-[11px] text-[#A1A1AA] font-mono font-medium truncate mt-0.5">
                                                     {e.handle}

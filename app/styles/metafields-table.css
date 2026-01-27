@@ -231,6 +231,7 @@
 /* --- SECTION HEADER --- */
 .mf-section {
     margin-bottom: 16px;
+    overflow: visible; /* Permet au border-radius de s'afficher */
 }
 
 .mf-section__header {
@@ -242,6 +243,8 @@
     background-color: #FAFAFA;
     padding: 14px 16px;
     transition: background-color 0.2s;
+    overflow: hidden; /* Assure que le border-radius est visible */
+    border-radius: 8px; /* Border-radius par défaut */
 }
 
 .mf-section__header:hover {
@@ -249,12 +252,27 @@
 }
 
 .mf-section__header--open {
-    border-radius: 8px 8px 0 0;
+    border-radius: 8px 8px 0 0 !important;
     border-bottom: none;
 }
 
 .mf-section__header--closed {
-    border-radius: 8px;
+    border-radius: 8px !important; /* Force le border-radius même si écrasé */
+    border-top-left-radius: 8px !important;
+    border-top-right-radius: 8px !important;
+    border-bottom-left-radius: 8px !important;
+    border-bottom-right-radius: 8px !important;
+}
+
+/* Forcer le border-radius même avec les classes Tailwind */
+.mf-section.animate-in .mf-section__header--closed,
+.mf-section__header--closed.animate-in,
+div.mf-section__header--closed {
+    border-radius: 8px !important;
+    border-top-left-radius: 8px !important;
+    border-top-right-radius: 8px !important;
+    border-bottom-left-radius: 8px !important;
+    border-bottom-right-radius: 8px !important;
 }
 
 /* Supprimer les ::after de HeroUI sur le thead */

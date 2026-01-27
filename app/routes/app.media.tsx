@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLoaderData, useRevalidator, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import "../styles/metafields-table.css";
 import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton, BasilicModal } from "../components/BasilicUI";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Pagination } from "@heroui/react";
 
 interface MediaItem {
     id: string;
@@ -51,6 +51,8 @@ export const loader = async ({ request }: any) => {
     let allMediaNodes: any[] = [];
     let hasNextFilePage = true;
     let fileCursor = null;
+    let totalMediaCount = 0;
+    let reachedLimit = false;
 
     while (hasNextFilePage) {
         const filesRes = await admin.graphql(`
@@ -86,12 +88,24 @@ export const loader = async ({ request }: any) => {
         `, { variables: { cursor: fileCursor } });
         const filesJson = await filesRes.json();
         const data = filesJson.data?.files;
-        if (data?.nodes) allMediaNodes = [...allMediaNodes, ...data.nodes];
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            allMediaNodes = [...allMediaNodes, ...data.nodes];
+            totalMediaCount += data.nodes.length;
+        }
         hasNextFilePage = data?.pageInfo?.hasNextPage || false;
         fileCursor = data?.pageInfo?.endCursor || null;
         
-        // Safety break (approx 2500 files max for performance)
-        if (allMediaNodes.length > 2500) break;
+        // Error handling
+        if (filesJson.errors) {
+            console.error("Error fetching files:", filesJson.errors);
+            break;
+        }
+        
+        // Safety break (approx 5000 files max for performance - increased for real stores)
+        if (allMediaNodes.length >= 5000) {
+            reachedLimit = true;
+            break;
+        }
     }
 
     // 2. SCAN ALL PRODUCTS (to get references)
@@ -118,17 +132,29 @@ export const loader = async ({ request }: any) => {
         const json = await productMediaRes.json();
         const data = json.data?.products;
         
-        (data?.nodes || []).forEach((p: any) => {
-            (p.media?.nodes || []).forEach((m: any) => {
-                productUsageMap[m.id] = (productUsageMap[m.id] || 0) + 1;
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            data.nodes.forEach((p: any) => {
+                if (p.media?.nodes && Array.isArray(p.media.nodes)) {
+                    p.media.nodes.forEach((m: any) => {
+                        if (m?.id) {
+                            productUsageMap[m.id] = (productUsageMap[m.id] || 0) + 1;
+                        }
+                    });
+                }
             });
-        });
+        }
 
         hasNextProductPage = data?.pageInfo?.hasNextPage || false;
         productCursor = data?.pageInfo?.endCursor || null;
+        
+        // Error handling
+        if (json.errors) {
+            console.error("Error fetching product media:", json.errors);
+            break;
+        }
 
-        // Safety break (approx 2500 products max for performance)
-        if (Object.keys(productUsageMap).length > 5000) break; 
+        // Safety break (approx 10000 products max for performance - increased for real stores)
+        if (Object.keys(productUsageMap).length > 10000) break; 
     }
 
     const mediaItems = allMediaNodes.map((n: any) => {
@@ -173,7 +199,8 @@ export const loader = async ({ request }: any) => {
     });
 
     // 3. COUNTS (for navigation)
-    const mediaCount = mediaItems.length;
+    // Use totalMediaCount to get accurate count, but if we hit the limit, use the loaded count
+    const mediaCount = reachedLimit ? allMediaNodes.length : mediaItems.length;
 
     // Metaobjects Count
     const moAllRes = await admin.graphql(`{ metaobjectDefinitions(first: 1) { nodes { id } } }`);
@@ -249,6 +276,8 @@ export const action = async ({ request }: any) => {
     return null;
 };
 
+const ITEMS_PER_PAGE = 50;
+
 export default function AppMedia() {
     const { mediaItems, moCount, mfCount, totalTemplates, mediaCount } = useLoaderData<typeof loader>();
     const revalidator = useRevalidator();
@@ -260,6 +289,7 @@ export default function AppMedia() {
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [renameModalOpen, setRenameModalOpen] = useState(false);
     const [renamePrefix, setRenamePrefix] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
 
     const columns = [
         { key: "file", label: "NOM DU FICHIER", className: "grow" },
@@ -336,6 +366,19 @@ export default function AppMedia() {
         return mediaItems.filter((i: any) => norm(i.filename).includes(s) || norm(i.alt).includes(s));
     }, [search, mediaItems]);
 
+    // Pagination
+    const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
+    const paginatedItems = useMemo(() => {
+        const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+        const endIndex = startIndex + ITEMS_PER_PAGE;
+        return filteredItems.slice(startIndex, endIndex);
+    }, [filteredItems, currentPage]);
+
+    // Reset to page 1 when search changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search]);
+
     return (
         <div className="min-h-screen bg-white animate-in fade-in duration-500">
             <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
@@ -384,11 +427,29 @@ export default function AppMedia() {
                             classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}
                         >
                             <TableHeader columns={columns}>{(c) => <TableColumn key={c.key} align={c.key === "menu" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>}</TableHeader>
-                            <TableBody items={filteredItems} emptyContent="Aucun fichier trouvé.">
+                            <TableBody items={paginatedItems} emptyContent="Aucun fichier trouvé.">
                                 {(item: any) => (<TableRow key={item.id}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}
                             </TableBody>
                         </Table>
                     </div>
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between px-4 py-4 border-t border-[#E4E4E7]">
+                            <div className="text-sm text-[#71717A]">
+                                Affichage de {(currentPage - 1) * ITEMS_PER_PAGE + 1} à {Math.min(currentPage * ITEMS_PER_PAGE, filteredItems.length)} sur {filteredItems.length} médias
+                            </div>
+                            <Pagination
+                                total={totalPages}
+                                page={currentPage}
+                                onChange={setCurrentPage}
+                                showControls
+                                classNames={{
+                                    wrapper: "gap-0",
+                                    item: "w-8 h-8 text-sm rounded-lg bg-transparent",
+                                    cursor: "bg-[#4BB961] text-white font-semibold",
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -397,7 +458,7 @@ export default function AppMedia() {
                 <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
                     <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10">
                         <div className="flex items-center gap-3">
-                            <span className="text-[14px] font-medium text-white">{selectedKeys === "all" ? filteredItems.length : selectedKeys.size} sélectionnés</span>
+                            <span className="text-[14px] font-medium text-white">{selectedKeys === "all" ? paginatedItems.length : selectedKeys.size} sélectionnés</span>
                             <button onClick={() => setSelectedKeys(new Set([]))} className="text-[#A1A1AA] hover:text-white transition-colors">
                                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><g opacity="0.8"><path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/><path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></g></svg>
                             </button>
@@ -457,7 +518,7 @@ export default function AppMedia() {
             </BasilicModal>
 
             <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer suppression" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="grow bg-[#F4F4F5]">Annuler</Button><Button color="danger" onPress={() => { submit({ action: 'delete_files', ids: JSON.stringify(Array.from(selectedKeys)) }, { method: 'post' }); setSelectedKeys(new Set([])); setDeleteModalOpen(false); }} className="grow bg-[#F43F5E] text-white">Confirmer</Button></>}>
-                <p className="py-2 text-sm">Voulez-vous vraiment supprimer {selectedKeys === "all" ? filteredItems.length : selectedKeys.size} fichier{selectedKeys.size > 1 ? 's' : ''} ? Cette action est irréversible.</p>
+                <p className="py-2 text-sm">Voulez-vous vraiment supprimer {selectedKeys === "all" ? paginatedItems.length : selectedKeys.size} fichier{selectedKeys.size > 1 ? 's' : ''} ? Cette action est irréversible.</p>
             </BasilicModal>
         </div>
     );

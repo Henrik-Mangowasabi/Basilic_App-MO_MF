@@ -23,7 +23,7 @@ import {
   DropdownMenu as HeroDropdownMenu,
   DropdownItem as HeroDropdownItem
 } from "@heroui/react";
-import { useNavigate } from "react-router";
+import { useNavigate, useNavigation } from "react-router";
 
 // --- TYPES ---
 interface AppBrandProps {
@@ -315,8 +315,10 @@ export const BasilicDropdown = ({
   );
 };
 
-export const NavigationTabs = ({ activePath, counts, disableNavigation = false }: { activePath: string, counts: { mf: number, mo: number, t?: number, m?: number }, disableNavigation?: boolean }) => {
+export const NavigationTabs = ({ activePath, counts, disableNavigation = false, hideLoadingModal = false }: { activePath: string, counts: { mf: number, mo: number, t?: number, m?: number }, disableNavigation?: boolean, hideLoadingModal?: boolean }) => {
   const navigate = useNavigate();
+  const navigation = useNavigation();
+  const isLoading = navigation.state === "loading" && !hideLoadingModal;
   
   const tabs = [
     { key: "/app/mf", label: "Champs Méta", count: counts.mf, icon: (
@@ -334,35 +336,50 @@ export const NavigationTabs = ({ activePath, counts, disableNavigation = false }
   ];
 
   return (
-    <div className="bg-[#F4F4F5]/60 p-1.5 rounded-[20px] flex items-center gap-1 w-fit shadow-sm border border-[#E4E4E7]/50">
-      {tabs.map((tab) => {
-        const isActive = activePath === tab.key;
-        return (
-          <button
-            key={tab.key}
-            onClick={() => !disableNavigation && navigate(tab.key)}
-            className={`
-              relative flex items-center gap-2.5 px-4 h-10 rounded-[14px] transition-all duration-300 group
-              ${isActive 
-                ? 'bg-white shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-[#18181B]' 
-                : 'text-[#71717A] hover:text-[#18181B] hover:bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]'}
-            `}
-          >
-            <span className={`transition-colors duration-300 ${isActive ? 'text-[#4BB961]' : 'text-[#A1A1AA] group-hover:text-[#4BB961]'}`}>
-              {tab.icon}
-            </span>
-            <span className="text-[14px] font-semibold tracking-tight">{tab.label}</span>
-            {tab.count !== undefined && (
-              <span className={`
-                min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300
-                ${isActive ? 'bg-[#4BB961] text-white scale-110' : 'bg-[#E4E4E7] text-[#71717A] group-hover:bg-[#4BB961] group-hover:text-white'}
-              `}>
-                {tab.count}
+    <>
+      <div className="bg-[#F4F4F5]/60 p-1.5 rounded-[20px] flex items-center gap-1 w-fit shadow-sm border border-[#E4E4E7]/50">
+        {tabs.map((tab) => {
+          const isActive = activePath === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => !disableNavigation && navigate(tab.key)}
+              className={`
+                relative flex items-center gap-2.5 px-4 h-10 rounded-[14px] transition-all duration-300 group
+                ${isActive 
+                  ? 'bg-white shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-[#18181B]' 
+                  : 'text-[#71717A] hover:text-[#18181B] hover:bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]'}
+              `}
+            >
+              <span className={`transition-colors duration-300 ${isActive ? 'text-[#4BB961]' : 'text-[#A1A1AA] group-hover:text-[#4BB961]'}`}>
+                {tab.icon}
               </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
+              <span className="text-[14px] font-semibold tracking-tight">{tab.label}</span>
+              {tab.count !== undefined && (
+                <span className={`
+                  min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300
+                  ${isActive ? 'bg-[#4BB961] text-white scale-110' : 'bg-[#E4E4E7] text-[#71717A] group-hover:bg-[#4BB961] group-hover:text-white'}
+                `}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      
+      {/* Loading Modal */}
+      {isLoading && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-[24px] p-8 shadow-2xl flex flex-col items-center gap-4 min-w-[280px] animate-in zoom-in-95 duration-300">
+            <div className="w-12 h-12 border-4 border-[#4BB961]/20 border-t-[#4BB961] rounded-full animate-spin"></div>
+            <div className="text-center">
+              <div className="text-[16px] font-semibold text-[#18181B] mb-1">Chargement...</div>
+              <div className="text-[13px] text-[#71717A]">Veuillez patienter</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

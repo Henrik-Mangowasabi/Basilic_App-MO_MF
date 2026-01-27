@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useLoaderData, useSubmit, useFetcher, useRevalidator } from "react-router";
+import { useLoaderData, useSubmit, useFetcher, useRevalidator, useNavigation, useLocation, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import "../styles/metafields-table.css";
 import { AppBrand, DevModeToggle, BasilicButton, BasilicSearch, NavigationTabs, BasilicModal } from "../components/BasilicUI";
@@ -28,12 +28,27 @@ const norm = (s: string) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/
 
 export const loader = async ({ request }: any) => {
     const { admin } = await authenticate.admin(request);
+    const url = new URL(request.url);
+    const shouldScan = url.searchParams.get('scan') === 'true';
+    
     const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
     const shopJson = await shopRes.json();
     const domain = shopJson.data.shop.myshopifyDomain;
-    const moRes = await admin.graphql(`query { metaobjectDefinitions(first: 250) { nodes { id } } }`);
-    const moJson = await moRes.json();
-    const moCount = moJson.data.metaobjectDefinitions.nodes.length;
+    // Metaobjects Count - Count all with pagination
+    let moCount = 0;
+    let hasNextMoPage = true;
+    let moCursor: string | null = null;
+    while (hasNextMoPage) {
+        const moRes = await admin.graphql(`query getMetaobjectDefinitionsCount($cursor: String) { metaobjectDefinitions(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: moCursor } });
+        const moJson: any = await moRes.json();
+        const data: any = moJson.data?.metaobjectDefinitions;
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            moCount += data.nodes.length;
+        }
+        hasNextMoPage = data?.pageInfo?.hasNextPage || false;
+        moCursor = data?.pageInfo?.endCursor || null;
+        if (moCount >= 10000) break; // Safety limit
+    }
 
     let installedApps: string[] = [];
     try {
@@ -55,25 +70,29 @@ export const loader = async ({ request }: any) => {
         return (j.data?.metafieldDefinitions?.nodes || []).map((n: any) => {
             const ns = n.namespace.toLowerCase();
             const isInstalled = installedApps.some((h: string) => ns.includes(h) || h.includes(ns));
+            const fullKey = `${n.namespace}.${n.key}`;
             return { 
                 ...n, 
                 ownerType: ot, 
-                fullKey: `${n.namespace}.${n.key}`, 
+                fullKey, 
                 count: n.metafieldsCount, 
                 typeDisplay: translateType(n.type?.name), 
                 diagTitle: (ns === 'custom' || ns === 'test_data') ? 'Manuel' : (ns.includes('discovery') ? 'Search & Discovery' : n.namespace.split(/[-_]+/).map((s: any) => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')),
                 diagSubtitle: (ns === 'custom' || ns === 'test_data') ? 'Création manuelle' : (isInstalled ? 'Installée' : 'Désinstallée'),
                 isManual: (ns === 'custom' || ns === 'test_data'),
-                isInstalled: isInstalled
+                isInstalled: isInstalled,
+                inCode: false // Sera mis à jour après le scan
             };
         }); 
     }));
     
-    // 5. COUNTS (for navigation)
+    // 5. COUNTS (for navigation) + SCAN CODE
     const themesRes = await admin.graphql(`{ themes(first: 1, roles: [MAIN]) { nodes { id } } }`);
     const themesData = await themesRes.json();
     const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split('/').pop();
     let totalTemplates = 0;
+    const metafieldsInCode = new Set<string>();
+    
     if (activeThemeId) {
         const { session } = await authenticate.admin(request);
         const assetsRes = await fetch(`https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`, {
@@ -86,13 +105,131 @@ export const loader = async ({ request }: any) => {
             const type = a.key.replace('templates/', '').split('.')[0];
             return managedTypes.includes(type);
         }).length;
+        
+        // Scan code UNIQUEMENT si shouldScan est true (premier chargement ou clic sur Scan Code)
+        if (shouldScan) {
+            const allAssets = assetsJson.assets || [];
+            const scannableExtensions = ['.liquid', '.js', '.json', '.css', '.scss', '.ts', '.tsx', '.jsx'];
+            const scannableAssets = allAssets.filter((a: any) => {
+                const key = a.key;
+                return scannableExtensions.some(ext => key.endsWith(ext)) &&
+                       !key.includes('node_modules') &&
+                       !key.includes('.min.');
+            });
+            
+            // Créer un Set de tous les fullKeys pour recherche rapide
+            const allFullKeys = new Set(Object.values(results).flat().map((mf: any) => mf.fullKey));
+            
+            // Scanner tous les fichiers avec progression
+            const batchSize = 10;
+            
+            for (let i = 0; i < scannableAssets.length; i += batchSize) {
+                const batch = scannableAssets.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (asset: any) => {
+                    try {
+                        const assetContentRes = await fetch(`https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`, {
+                            headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
+                        });
+                        const assetContentJson = await assetContentRes.json();
+                        const content = assetContentJson.asset?.value || '';
+                        
+                        // Chercher tous les metafields dans le contenu
+                        allFullKeys.forEach((fullKey) => {
+                            // Extraire namespace et key séparément
+                            const [namespace, key] = fullKey.split('.');
+                            
+                            // Patterns de recherche flexibles pour détecter TOUTES les clés techniques
+                            // Format direct
+                            if (content.includes(fullKey)) {
+                                metafieldsInCode.add(fullKey);
+                                return;
+                            }
+                            
+                            // Formats avec guillemets
+                            if (content.includes(`"${fullKey}"`) || 
+                                content.includes(`'${fullKey}'`) ||
+                                content.includes(`\`${fullKey}\``)) {
+                                metafieldsInCode.add(fullKey);
+                                return;
+                            }
+                            
+                            // Formats avec metafields (namespace.key ou fullKey)
+                            if (content.includes(`metafields.${namespace}.${key}`) ||
+                                content.includes(`metafields['${fullKey}']`) ||
+                                content.includes(`metafields["${fullKey}"]`) ||
+                                content.includes(`metafields.${fullKey}`)) {
+                                metafieldsInCode.add(fullKey);
+                                return;
+                            }
+                            
+                            // Formats avec brackets
+                            if (content.includes(`['${fullKey}']`) ||
+                                content.includes(`["${fullKey}"]`)) {
+                                metafieldsInCode.add(fullKey);
+                                return;
+                            }
+                            
+                            // Patterns Liquid : recherche flexible avec regex
+                            // Détecte : {{ product.metafields.namespace.key }}, {{ collection.metafields.namespace.key }}, etc.
+                            const liquidPattern = new RegExp(`metafields\\.${namespace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+                            if (liquidPattern.test(content)) {
+                                metafieldsInCode.add(fullKey);
+                                return;
+                            }
+                            
+                            // Pattern Liquid avec brackets : metafields['namespace.key']
+                            const liquidBracketPattern = new RegExp(`metafields\\s*\\[\\s*['"]${fullKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]\\s*\\]`, 'i');
+                            if (liquidBracketPattern.test(content)) {
+                                metafieldsInCode.add(fullKey);
+                                return;
+                            }
+                            
+                            // Pattern pour les objets JavaScript/JSON
+                            const jsPattern = new RegExp(`['"]${fullKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]\\s*:`, 'i');
+                            if (jsPattern.test(content)) {
+                                metafieldsInCode.add(fullKey);
+                                return;
+                            }
+                        });
+                    } catch (e) {
+                        // Ignorer les erreurs pour les fichiers non accessibles
+                        console.error(`Error scanning ${asset.key}:`, e);
+                    }
+                }));
+            }
+        }
     }
-    const filesRes = await admin.graphql(`query { files(first: 100) { nodes { id } } }`);
-    const mediaCount = (await filesRes.json()).data?.files?.nodes?.length || 0;
+    // Media Count - Count all files with pagination
+    let mediaCount = 0;
+    let hasNextFilePage = true;
+    let fileCursor: string | null = null;
+    while (hasNextFilePage) {
+        const filesRes = await admin.graphql(`query getFilesCount($cursor: String) { files(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: fileCursor } });
+        const filesJson: any = await filesRes.json();
+        const data: any = filesJson.data?.files;
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            mediaCount += data.nodes.length;
+        }
+        hasNextFilePage = data?.pageInfo?.hasNextPage || false;
+        fileCursor = data?.pageInfo?.endCursor || null;
+        if (mediaCount >= 10000) break; // Safety limit
+    }
+    
+    // Utiliser les résultats du scan (sera mis en cache côté client)
+    const metafieldsInCodeToUse = metafieldsInCode;
+    
+    // Marquer les metafields trouvés dans le code
+    const resultsWithCodeScan = results.map((resultArray: any[]) => 
+        resultArray.map((mf: any) => ({
+            ...mf,
+            inCode: metafieldsInCodeToUse.has(mf.fullKey)
+        }))
+    );
     
     return { 
-        domain, moCount, totalTemplates, mediaCount,
-        mfData: { p: results[0], v: results[1], c: results[2], cl: results[3], o: results[4], do_: results[5], co: results[6], loc: results[7], m: results[8], pg: results[9], b: results[10], art: results[11], s: results[12] } 
+        domain, moCount, totalTemplates, mediaCount, scanned: shouldScan,
+        scanResults: shouldScan ? Array.from(metafieldsInCode) : null, // Envoyer les résultats du scan pour les sauvegarder côté client
+        mfData: { p: resultsWithCodeScan[0], v: resultsWithCodeScan[1], c: resultsWithCodeScan[2], cl: resultsWithCodeScan[3], o: resultsWithCodeScan[4], do_: resultsWithCodeScan[5], co: resultsWithCodeScan[6], loc: resultsWithCodeScan[7], m: resultsWithCodeScan[8], pg: resultsWithCodeScan[9], b: resultsWithCodeScan[10], art: resultsWithCodeScan[11], s: resultsWithCodeScan[12] } 
     };
 };
 
@@ -106,9 +243,16 @@ export const action = async ({ request }: any) => {
 };
 
 export default function AppMf() {
-    const { domain, mfData, moCount, totalTemplates, mediaCount } = useLoaderData<any>();
+    const { domain, mfData, moCount, totalTemplates, mediaCount, scanned, scanResults } = useLoaderData<any>();
     const submit = useSubmit();
     const revalidator = useRevalidator();
+    const navigation = useNavigation();
+    const location = useLocation();
+    const navigate = useNavigate();
+    const isLoading = navigation.state === "loading";
+    // Utiliser navigation.location pour détecter la destination pendant la navigation
+    const currentOrNextLocation = navigation.location || location;
+    const willScan = currentOrNextLocation.search.includes('scan=true');
     const [devMode, setDevMode] = useState(false);
     const [search, setSearch] = useState("");
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "Produits": true });
@@ -119,8 +263,32 @@ export default function AppMf() {
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
     const [toast, setToast] = useState<{title: string, msg: string} | null>(null);
+    const [scanProgress, setScanProgress] = useState(0);
+    const hasScannedOnce = useRef(false);
+    const [cachedScanResults, setCachedScanResults] = useState<Set<string> | null>(null);
+    const [sortConfig, setSortConfig] = useState<{ column: string | null; direction: 'asc' | 'desc' }>({ column: null, direction: 'asc' });
 
     useEffect(() => { setDevMode(localStorage.getItem('mm_dev_mode') === 'true'); }, []);
+    
+    // Sauvegarder les résultats du scan dans sessionStorage et les utiliser pour l'affichage
+    useEffect(() => {
+        if (scanResults && scanResults.length > 0) {
+            // Sauvegarder les résultats du scan dans sessionStorage
+            sessionStorage.setItem('mf_scan_results', JSON.stringify(scanResults));
+            setCachedScanResults(new Set(scanResults));
+        } else {
+            // Récupérer les résultats du cache si disponibles
+            const cached = sessionStorage.getItem('mf_scan_results');
+            if (cached) {
+                try {
+                    const cachedArray = JSON.parse(cached);
+                    setCachedScanResults(new Set(cachedArray));
+                } catch (e) {
+                    console.error('Error parsing cached scan results:', e);
+                }
+            }
+        }
+    }, [scanResults]);
     const toggleDev = (v: boolean) => { setDevMode(v); localStorage.setItem('mm_dev_mode', v ? 'true' : 'false'); };
     const totalCount = Object.values(mfData).reduce((a: number, b: any) => a + b.length, 0);
 
@@ -129,8 +297,89 @@ export default function AppMf() {
         return `https://admin.shopify.com/store/${domain.replace('.myshopify.com', '')}/settings/custom_data/${otMap[item.ownerType]}/metafields/${item.id.split('/').pop()}`;
     };
 
+    const handleSort = (columnKey: string) => {
+        setSortConfig(prev => {
+            if (prev.column === columnKey) {
+                // Si on clique sur la même colonne, inverser la direction
+                return { column: columnKey, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+            } else {
+                // Nouvelle colonne, trier par ordre croissant
+                return { column: columnKey, direction: 'asc' };
+            }
+        });
+    };
+
+    const sortData = (data: any[]) => {
+        if (!sortConfig.column) return data;
+        
+        const sorted = [...data].sort((a, b) => {
+            let aVal: string | number = '';
+            let bVal: string | number = '';
+            
+            switch (sortConfig.column) {
+                case 'name':
+                    aVal = (a.name || '').toLowerCase();
+                    bVal = (b.name || '').toLowerCase();
+                    break;
+                case 'count':
+                    aVal = a.count || 0;
+                    bVal = b.count || 0;
+                    break;
+                default:
+                    return 0;
+            }
+            
+            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        
+        return sorted;
+    };
+
     const columns = [
-        { key: "name", label: "NOM DU METAFIELD", className: "mf-col--name" },
+        { 
+            key: "name", 
+            label: (
+                <div 
+                    className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity select-none" 
+                    onClick={(e) => { e.stopPropagation(); handleSort('name'); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleSort('name'); } }}
+                    role="button"
+                    tabIndex={0}
+                >
+                    <span>NOM DU METAFIELD</span>
+                    {sortConfig.column === 'name' ? (
+                        <svg 
+                            width="12" 
+                            height="12" 
+                            viewBox="0 0 12 12" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2"
+                            className={`text-[#71717A] ${sortConfig.direction === 'desc' ? 'rotate-180' : ''}`}
+                        >
+                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    ) : (
+                        <svg 
+                            width="12" 
+                            height="12" 
+                            viewBox="0 0 12 12" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="1.5"
+                            className="text-[#A1A1AA] opacity-50"
+                        >
+                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    )}
+                </div>
+            ), 
+            className: "mf-col--name" 
+        },
         ...(devMode ? [
             { key: "fullKey", label: (<div className="relative overflow-visible"><div className="mf-dev-badge"><span>&lt;/&gt;</span> Dev Mode</div>CLÉ TECH</div>), className: "mf-col--key mf-table__header--dev" },
             { key: "type", label: "STRUCTURE", className: "mf-col--type mf-table__header--dev" },
@@ -160,7 +409,8 @@ export default function AppMf() {
                 </div>
             );
             case "code": {
-                const inCode = ['custom.test', 'custom.debug', 'custom.label'].includes(item.fullKey) || item.fullKey.includes('scan');
+                // Utiliser le cache si disponible, sinon utiliser item.inCode
+                const inCode = cachedScanResults ? cachedScanResults.has(item.fullKey) : (item.inCode || false);
                 return (<div className="mf-cell mf-cell--center mf-cell--badge"><span className={`mf-badge--code ${inCode ? 'mf-badge--found' : ''}`}>{inCode ? 'Oui' : 'Non'}</span></div>);
             }
             case "count": return (<div className="mf-cell mf-cell--center"><span className="mf-badge--count">{item.count}</span></div>);
@@ -196,28 +446,110 @@ export default function AppMf() {
         );
     }, [search, allItems]);
 
+    // Au premier chargement, forcer le scan (une seule fois)
+    useEffect(() => {
+        // Vérifier si on a déjà scanné dans cette session
+        const sessionScanned = sessionStorage.getItem('mf_scanned');
+        if (!sessionScanned && !location.search.includes('scan=') && !hasScannedOnce.current) {
+            hasScannedOnce.current = true;
+            sessionStorage.setItem('mf_scanned', 'true');
+            navigate('/app/mf?scan=true', { replace: true });
+        }
+    }, [navigate, location.search]);
+    
+    // Simuler la progression pendant le scan complet uniquement
+    useEffect(() => {
+        if (willScan) {
+            // Démarrer la progression dès qu'on détecte qu'on va scanner
+            if (isLoading || scanned === undefined) {
+                setScanProgress(0);
+                const interval = setInterval(() => {
+                    setScanProgress(prev => {
+                        if (prev >= 95) return 95; // Limiter à 95% max pendant le scan
+                        const next = prev + Math.random() * 10;
+                        return Math.min(next, 95); // S'assurer qu'on ne dépasse jamais 95%
+                    });
+                }, 200);
+                return () => clearInterval(interval);
+            } else if (scanned) {
+                // Scan terminé
+                setScanProgress(100);
+                const timeout = setTimeout(() => {
+                    setScanProgress(0);
+                    // Retirer le paramètre scan de l'URL après le scan sans déclencher de navigation
+                    if (location.search.includes('scan=true')) {
+                        window.history.replaceState({}, '', '/app/mf');
+                    }
+                }, 500);
+                return () => clearTimeout(timeout);
+            }
+        } else {
+            setScanProgress(0);
+        }
+    }, [willScan, isLoading, scanned, location.search, navigate]);
+
     return (
-        <div className="min-h-screen bg-white animate-in fade-in duration-500">
-            <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
+        <>
+            {/* Loading Modal avec pourcentage - UNIQUEMENT lors du scan complet */}
+            {((willScan || navigation.location?.search.includes('scan=true')) && (isLoading || scanned === undefined)) && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-[24px] p-8 shadow-2xl flex flex-col items-center gap-6 min-w-[320px] animate-in zoom-in-95 duration-300">
+                        <div className="relative w-24 h-24">
+                            <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 100 100">
+                                <circle
+                                    cx="50"
+                                    cy="50"
+                                    r="45"
+                                    stroke="#E4E4E7"
+                                    strokeWidth="8"
+                                    fill="none"
+                                />
+                                <circle
+                                    cx="50"
+                                    cy="50"
+                                    r="45"
+                                    stroke="#4BB961"
+                                    strokeWidth="8"
+                                    fill="none"
+                                    strokeDasharray={`${2 * Math.PI * 45}`}
+                                    strokeDashoffset={`${2 * Math.PI * 45 * (1 - scanProgress / 100)}`}
+                                    strokeLinecap="round"
+                                    className="transition-all duration-300"
+                                />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-[20px] font-bold text-[#18181B]">{Math.round(Math.min(scanProgress, 100))}%</span>
+                            </div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-[18px] font-semibold text-[#18181B] mb-2">Scan du code en cours...</div>
+                            <div className="text-[14px] text-[#71717A]">Analyse des fichiers du thème</div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            <div className="min-h-screen bg-white animate-in fade-in duration-500">
+                <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
                 <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]"><AppBrand /><div className="flex gap-3 items-center"><DevModeToggle isChecked={devMode} onChange={toggleDev} /><BasilicButton 
                     variant="flat" 
                     className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
                     isLoading={revalidator.state === "loading"}
                     onPress={() => { 
                         setSelectedKeys(new Set()); 
-                        revalidator.revalidate(); 
+                        navigate('/app/mf?scan=true');
                     }} 
                     icon={revalidator.state === "loading" ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
                 >
                     Scan Code
                 </BasilicButton><BasilicButton icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>}>Générer descriptions manquantes</BasilicButton></div></div>
-                <div className="flex items-center justify-between w-full"><NavigationTabs activePath="/app/mf" counts={{ mf: totalCount, mo: moCount, t: totalTemplates, m: mediaCount }} /><div style={{ width: '320px' }}><BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" /></div></div>
+                <div className="flex items-center justify-between w-full"><NavigationTabs activePath="/app/mf" counts={{ mf: totalCount, mo: moCount, t: totalTemplates, m: mediaCount }} hideLoadingModal={willScan || (navigation.location?.search.includes('scan=true'))} /><div style={{ width: '320px' }}><BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" /></div></div>
                 
                 {search ? (
                     filteredSearch.length > 0 ? (
                         <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
                             <div className="mf-section__header mf-section__header--open cursor-default" style={{ pointerEvents: 'none' }}><div className="mf-section__title-group"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><span className="mf-section__title">Résultats de recherche</span><span className="mf-section__count">{filteredSearch.length}</span></div></div>
-                            <div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label="Table MF Search" removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "count" || c.key === "actions" || c.key === "menu" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader><TableBody items={filteredSearch} emptyContent="Aucun résultat.">{(item: any) => (<TableRow key={item.id}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody></Table></div>
+                            <div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label="Table MF Search" removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "count" || c.key === "actions" || c.key === "menu" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader><TableBody items={sortData(filteredSearch)} emptyContent="Aucun résultat.">{(item: any) => (<TableRow key={item.id}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody></Table></div>
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-20 bg-[#F4F4F5]/50 rounded-[32px] border-2 border-dashed border-[#E4E4E7] animate-in fade-in zoom-in-95 duration-500">
@@ -232,23 +564,31 @@ export default function AppMf() {
                     <div className="space-y-4">
                         {[
                             { t: "Produits", i: <Icons.Products/>, d: mfData.p }, { t: "Variantes", i: <Icons.Variants/>, d: mfData.v }, { t: "Collections", i: <Icons.Collections/>, d: mfData.c }, { t: "Clients", i: <Icons.Clients/>, d: mfData.cl }, { t: "Commandes", i: <Icons.Orders/>, d: mfData.o }, { t: "Commandes Provisoires", i: <Icons.Orders/>, d: mfData.do_ }, { t: "Entreprises B2B", i: <Icons.Companies/>, d: mfData.co }, { t: "Emplacements (Stock)", i: <Icons.Locations/>, d: mfData.loc }, { t: "Marchés", i: <Icons.Markets/>, d: mfData.m }, { t: "Pages", i: <Icons.Generic/>, d: mfData.pg }, { t: "Blogs", i: <Icons.Generic/>, d: mfData.b }, { t: "Articles", i: <Icons.Generic/>, d: mfData.art }, { t: "Boutique", i: <Icons.Generic/>, d: mfData.s }
-                        ].map(s => (
+                        ].filter(s => s.d.length > 0).map(s => {
+                            const sortedData = sortData(s.d);
+                            return (
                             <div key={s.t} className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <div className={`mf-section__header ${openSections[s.t] ? 'mf-section__header--open' : 'mf-section__header--closed'}`} onClick={() => setOpenSections(p => ({ ...p, [s.t]: !p[s.t] }))}><div className="mf-section__title-group"><span className="mf-section__icon">{s.i}</span><span className="mf-section__title">{s.t}</span><span className="mf-section__count">{s.d.length}</span></div><span className={`mf-section__chevron ${openSections[s.t] ? 'mf-section__chevron--open' : ''}`}><Icons.ChevronRight /></span></div>
+                                <div 
+                                    className={`mf-section__header ${openSections[s.t] ? 'mf-section__header--open' : 'mf-section__header--closed'}`} 
+                                    onClick={() => setOpenSections(p => ({ ...p, [s.t]: !p[s.t] }))}
+                                    style={!openSections[s.t] ? { borderRadius: '8px' } : undefined}
+                                ><div className="mf-section__title-group"><span className="mf-section__icon">{s.i}</span><span className="mf-section__title">{s.t}</span><span className="mf-section__count">{s.d.length}</span></div><span className={`mf-section__chevron ${openSections[s.t] ? 'mf-section__chevron--open' : ''}`}><Icons.ChevronRight /></span></div>
                                 {openSections[s.t] && (
-                                    <div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label={`Table ${s.t}`} removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={(selectedKeys as any) === "all" ? "all" : new Set([...selectedKeys].filter(k => s.d.some((x: any) => x.id === k)))} onSelectionChange={(k) => handleOnSelectionChange(s.d, k)} className="mf-table" classNames={{ th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "count" || c.key === "actions" || c.key === "menu" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader><TableBody items={s.d} emptyContent="Aucun champ.">{(item: any) => (<TableRow key={item.id}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody></Table></div>
+                                    <div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label={`Table ${s.t}`} removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={(selectedKeys as any) === "all" ? "all" : new Set([...selectedKeys].filter(k => sortedData.some((x: any) => x.id === k)))} onSelectionChange={(k) => handleOnSelectionChange(sortedData, k)} className="mf-table" classNames={{ th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "count" || c.key === "actions" || c.key === "menu" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader><TableBody items={sortedData} emptyContent="Aucun champ.">{(item: any) => (<TableRow key={item.id}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody></Table></div>
                                 )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
+                </div>
+
+                {selectedKeys.size > 0 && (<div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300"><div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10"><div className="flex items-center gap-3"><span className="text-[14px] font-medium text-white">{(selectedKeys as any) === "all" ? totalCount : selectedKeys.size} sélectionnés</span><button onClick={() => setSelectedKeys(new Set([]))} className="text-[#A1A1AA] hover:text-white transition-colors"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><g opacity="0.8"><path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/><path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></g></svg></button></div><div className="h-6 w-[1px] bg-[#3F3F46]"></div><Button onPress={() => { setPendingDeleteIds(Array.from(selectedKeys).map(k => String(k))); setDeleteModalOpen(true); }} className="bg-[#F43F5E] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#E11D48] transition-colors gap-2" startContent={<Icons.Delete />}>supprimer</Button></div></div>)}
+
+                <BasilicModal isOpen={!!modalData} onClose={() => setModalData(null)} title="Editer le champ" footer={<><Button variant="light" onPress={() => setModalData(null)} className="grow bg-[#F4F4F5]">Annuler</Button><BasilicButton className="grow" onPress={() => { submit({ action: 'update', id: modalData.id, name: editName, description: editDesc }, { method: 'post' }); setModalData(null); }}>Enregistrer</BasilicButton></>}><div className="space-y-4 pt-2"><div><label htmlFor="mf-name" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Titre</label><input id="mf-name" value={editName} onChange={e => setEditName(e.target.value)} className="w-full h-11 px-4 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] font-semibold" /></div><div><label htmlFor="mf-desc" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Description</label><textarea id="mf-desc" value={editDesc} onChange={e => setEditDesc(e.target.value)} className="w-full h-24 p-3 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] resize-none" /></div></div></BasilicModal>
+                <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer suppression" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="grow bg-[#F4F4F5]">Annuler</Button><Button onPress={() => { submit({ action: 'delete', ids: JSON.stringify(pendingDeleteIds) }, { method: 'post' }); setSelectedKeys(new Set([])); setDeleteModalOpen(false); }} className="grow bg-[#F43F5E] text-white">Confirmer</Button></>}><p className="py-2 text-sm">Supprimer ces {pendingDeleteIds.length} champs ? Cette action est irréversible.</p></BasilicModal>
+                {toast && (<div className="mf-toast"><div className="mf-toast__content"><span className="mf-toast__title">{toast.title}</span><span className="mf-toast__message">{toast.msg}</span></div></div>)}
             </div>
-
-            {selectedKeys.size > 0 && (<div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300"><div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10"><div className="flex items-center gap-3"><span className="text-[14px] font-medium text-white">{(selectedKeys as any) === "all" ? totalCount : selectedKeys.size} sélectionnés</span><button onClick={() => setSelectedKeys(new Set([]))} className="text-[#A1A1AA] hover:text-white transition-colors"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><g opacity="0.8"><path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/><path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></g></svg></button></div><div className="h-6 w-[1px] bg-[#3F3F46]"></div><Button onPress={() => { setPendingDeleteIds(Array.from(selectedKeys).map(k => String(k))); setDeleteModalOpen(true); }} className="bg-[#F43F5E] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#E11D48] transition-colors gap-2" startContent={<Icons.Delete />}>supprimer</Button></div></div>)}
-
-            <BasilicModal isOpen={!!modalData} onClose={() => setModalData(null)} title="Editer le champ" footer={<><Button variant="light" onPress={() => setModalData(null)} className="grow bg-[#F4F4F5]">Annuler</Button><BasilicButton className="grow" onPress={() => { submit({ action: 'update', id: modalData.id, name: editName, description: editDesc }, { method: 'post' }); setModalData(null); }}>Enregistrer</BasilicButton></>}><div className="space-y-4 pt-2"><div><label htmlFor="mf-name" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Titre</label><input id="mf-name" value={editName} onChange={e => setEditName(e.target.value)} className="w-full h-11 px-4 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] font-semibold" /></div><div><label htmlFor="mf-desc" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Description</label><textarea id="mf-desc" value={editDesc} onChange={e => setEditDesc(e.target.value)} className="w-full h-24 p-3 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] resize-none" /></div></div></BasilicModal>
-            <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer suppression" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="grow bg-[#F4F4F5]">Annuler</Button><Button onPress={() => { submit({ action: 'delete', ids: JSON.stringify(pendingDeleteIds) }, { method: 'post' }); setSelectedKeys(new Set([])); setDeleteModalOpen(false); }} className="grow bg-[#F43F5E] text-white">Confirmer</Button></>}><p className="py-2 text-sm">Supprimer ces {pendingDeleteIds.length} champs ? Cette action est irréversible.</p></BasilicModal>
-            {toast && (<div className="mf-toast"><div className="mf-toast__content"><span className="mf-toast__title">{toast.title}</span><span className="mf-toast__message">{toast.msg}</span></div></div>)}
-        </div>
+        </>
     );
 }
