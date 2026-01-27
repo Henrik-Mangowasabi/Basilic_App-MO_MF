@@ -387,7 +387,7 @@ export default function AppMo() {
         switch (columnKey) {
             case "name": return (<div className="mf-cell mf-cell--multi"><span className="mf-text--title">{item.name}</span>{item.description && <span className="mf-text--desc">{item.description}</span>}</div>);
             case "fullKey": return (<div className="mf-cell mf-cell--key"><span className="mf-text--key">{item.type}</span></div>);
-            case "fields": return (<div className="mf-cell mf-cell--type"><div className="mf-chip cursor-default">{item.fieldsCount} Champs</div></div>);
+            case "fields": return (<div className="mf-cell mf-cell--type"><div className="mf-chip cursor-pointer hover:bg-[#E4E4E7] transition-colors" onClick={() => { setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); }} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); } }}>{item.fieldsCount} Champs</div></div>);
             case "code_usage": return (<div className="mf-cell mf-cell--center mf-cell--badge"><span className="mf-badge--code">Non</span></div>);
             case "count": return (<div className="mf-cell mf-cell--center"><button onClick={() => handleOpenEntries(item)} className="mf-badge--count hover:bg-[#E4E4E7] transition-colors cursor-pointer">{item.count}</button></div>);
             case "actions": return (<div className="mf-cell mf-cell--center"><Tooltip content="Ouvrir"><a href={getShopifyUrl(item.type)} target="_blank" rel="noopener noreferrer" className="mf-action-link"><Icons.Link /></a></Tooltip></div>);
@@ -491,11 +491,16 @@ export default function AppMo() {
                 size="lg" 
                 onClose={() => setStructModalData(null)} 
                 title={
-                    <div className="flex items-center gap-2">
-                        Configuration des champs 
-                        <span className="px-2 py-0.5 bg-[#F4F4F5] rounded-full text-[12px] text-[#71717A] font-medium">
-                            {structModalData?.fieldDefinitions.length}
-                        </span>
+                    <div className="flex flex-col gap-1">
+                        <div className="text-[20px] font-semibold text-[#18181B]">
+                            {structModalData?.name}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[14px] text-[#71717A] font-normal">Configuration des champs</span>
+                            <span className="px-2 py-0.5 bg-[#F4F4F5] rounded-full text-[12px] text-[#71717A] font-medium">
+                                {structModalData?.fieldDefinitions.length}
+                            </span>
+                        </div>
                     </div>
                 }
                 footer={
@@ -627,11 +632,16 @@ export default function AppMo() {
                 size="lg"
                 onClose={() => setEntriesModalData(null)} 
                 title={
-                    <div className="flex items-center gap-2">
-                        Gérer les entrées 
-                        <span className="px-2 py-0.5 bg-[#F4F4F5] rounded-full text-[12px] text-[#71717A] font-medium">
-                            {entriesCache[entriesModalData?.type]?.length || 0}
-                        </span>
+                    <div className="flex flex-col gap-1">
+                        <div className="text-[20px] font-semibold text-[#18181B]">
+                            {entriesModalData?.name}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[14px] text-[#71717A] font-normal">Gérer les entrées</span>
+                            <span className="px-2 py-0.5 bg-[#F4F4F5] rounded-full text-[12px] text-[#71717A] font-medium">
+                                {entriesCache[entriesModalData?.type]?.length || 0}
+                            </span>
+                        </div>
                     </div>
                 }
                 footer={
@@ -706,7 +716,7 @@ export default function AppMo() {
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
                                                     <div className={`text-[15px] font-bold transition-all ${isSelected ? 'text-[#4BB961]' : 'text-[#18181B]'} truncate`}>{e.displayName}</div>
-                                                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-md ${e.refCount > 0 ? 'bg-[#4BB961]/10 text-[#4BB961]' : 'bg-[#E4E4E7]/50 text-[#71717A]'}`}>
+                                                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-md whitespace-nowrap ${e.refCount > 0 ? 'bg-[#4BB961]/10 text-[#4BB961]' : 'bg-[#E4E4E7]/50 text-[#71717A]'}`}>
                                                         {e.refCount} référence{e.refCount > 1 ? 's' : ''}
                                                     </span>
                                                 </div>
