@@ -202,18 +202,45 @@ export const loader = async ({ request }: any) => {
     // Use totalMediaCount to get accurate count, but if we hit the limit, use the loaded count
     const mediaCount = reachedLimit ? allMediaNodes.length : mediaItems.length;
 
-    // Metaobjects Count
-    const moAllRes = await admin.graphql(`{ metaobjectDefinitions(first: 1) { nodes { id } } }`);
-    const moCount = (await moAllRes.json()).data?.metaobjectDefinitions?.nodes?.length || 0;
+    // Metaobjects Count - Count all with pagination (comme app.mo.tsx)
+    let moCount = 0;
+    let hasNextMoPage = true;
+    let moCursor: string | null = null;
+    while (hasNextMoPage) {
+        const moRes = await admin.graphql(`query getMetaobjectDefinitionsCount($cursor: String) { metaobjectDefinitions(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: moCursor } });
+        const moJson: any = await moRes.json();
+        const data: any = moJson.data?.metaobjectDefinitions;
+        if (data?.nodes && Array.isArray(data.nodes)) {
+            moCount += data.nodes.length;
+        }
+        hasNextMoPage = data?.pageInfo?.hasNextPage || false;
+        moCursor = data?.pageInfo?.endCursor || null;
+        if (moCount >= 10000) break; // Safety limit
+    }
 
-    // Metafields Count
+    // Metafields Count - Count all with pagination (comme app.mf.tsx)
     const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
     const mfCounts = await Promise.all(resources.map(async (r) => {
         try {
-            const res = await admin.graphql(`query { metafieldDefinitions(ownerType: ${r}, first: 50) { nodes { id } } }`);
-            const json = await res.json();
-            return (json?.data?.metafieldDefinitions?.nodes || []).length;
-        } catch (e) { return 0; }
+            let count = 0;
+            let hasNextPage = true;
+            let cursor: string | null = null;
+            while (hasNextPage) {
+                const res = await admin.graphql(`query getMetafieldDefinitionsCount($cursor: String, $ownerType: MetafieldOwnerType!) { metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor, ownerType: r } });
+                const json = await res.json();
+                const data = json?.data?.metafieldDefinitions;
+                if (data?.nodes && Array.isArray(data.nodes)) {
+                    count += data.nodes.length;
+                }
+                hasNextPage = data?.pageInfo?.hasNextPage || false;
+                cursor = data?.pageInfo?.endCursor || null;
+                if (count >= 10000) break; // Safety limit
+            }
+            return count;
+        } catch (e) { 
+            console.error(`Error counting metafields for ${r}:`, e);
+            return 0; 
+        }
     }));
     const mfCount = mfCounts.reduce((acc, curr) => acc + curr, 0);
 

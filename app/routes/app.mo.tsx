@@ -72,8 +72,31 @@ export const loader = async ({ request }: any) => {
     const shopRes = await admin.graphql(`{ shop { name myshopifyDomain } }`);
     const shopJson = await shopRes.json();
     const shopDomain = shopJson?.data?.shop?.myshopifyDomain || '';
+    // Metafields Count - Count all with pagination (comme app.mf.tsx)
     let mfCount = 0;
-    try { const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP']; const results = await Promise.all(resources.map(async (ot) => { const r = await admin.graphql(`query { metafieldDefinitions(ownerType: ${ot}, first: 50) { nodes { id } } }`); const j = await r.json(); return (j.data?.metafieldDefinitions?.nodes || []).length; })); mfCount = results.reduce((a, b) => a + b, 0); } catch (e) {}
+    try {
+        const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
+        const results = await Promise.all(resources.map(async (ot) => {
+            let count = 0;
+            let hasNextPage = true;
+            let cursor: string | null = null;
+            while (hasNextPage) {
+                const r = await admin.graphql(`query getMetafieldDefinitionsCount($cursor: String, $ownerType: MetafieldOwnerType!) { metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor, ownerType: ot } });
+                const j = await r.json();
+                const data = j.data?.metafieldDefinitions;
+                if (data?.nodes && Array.isArray(data.nodes)) {
+                    count += data.nodes.length;
+                }
+                hasNextPage = data?.pageInfo?.hasNextPage || false;
+                cursor = data?.pageInfo?.endCursor || null;
+                if (count >= 10000) break; // Safety limit
+            }
+            return count;
+        }));
+        mfCount = results.reduce((a, b) => a + b, 0);
+    } catch (e) {
+        console.error("Error counting metafields:", e);
+    }
 
     // Templates Count
     const themesRes = await admin.graphql(`{ themes(first: 1, roles: [MAIN]) { nodes { id } } }`);
@@ -223,6 +246,7 @@ export default function AppMo() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [generationComplete, setGenerationComplete] = useState(false);
     const [isTableOpen, setIsTableOpen] = useState(true);
+    const [sortConfig, setSortConfig] = useState<{ column: string | null; direction: 'asc' | 'desc' }>({ column: null, direction: 'asc' });
 
     useEffect(() => { setDevMode(localStorage.getItem('mm_dev_mode') === 'true'); }, []);
     const toggleDev = (val: boolean) => { setDevMode(val); localStorage.setItem('mm_dev_mode', val ? 'true' : 'false'); };
@@ -266,8 +290,87 @@ export default function AppMo() {
     const checkAutoGenerate = () => { setAutoGenCount(moData.filter((d: any) => !d.description || d.description === "" || d.description === "-").length); setGenerationComplete(false); setAutoGenModalOpen(true); };
     const confirmAutoGenerate = async () => { setIsGenerating(true); const missing = moData.filter((d: any) => !d.description || d.description === "" || d.description === "-"); for (const item of missing) { let desc = (item.type.split('.').pop() || item.type).replace(/_/g, ' '); desc = desc.charAt(0).toUpperCase() + desc.slice(1); await submit({ action: 'update_desc', id: item.id, name: item.name, description: desc }, { method: 'post' }); } setIsGenerating(false); setGenerationComplete(true); setToast({ title: "Descriptions générées", message: `${missing.length} descriptions créées.` }); setTimeout(() => { setToast(null); setAutoGenModalOpen(false); }, 3000); };
 
+    const handleSort = (columnKey: string) => {
+        setSortConfig(prev => {
+            if (prev.column === columnKey) {
+                return { column: columnKey, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+            } else {
+                return { column: columnKey, direction: 'asc' };
+            }
+        });
+    };
+
+    const sortData = (data: any[]) => {
+        if (!sortConfig.column) return data;
+        
+        const sorted = [...data].sort((a, b) => {
+            let aVal: string | number = '';
+            let bVal: string | number = '';
+            
+            switch (sortConfig.column) {
+                case 'name':
+                    aVal = (a.name || '').toLowerCase();
+                    bVal = (b.name || '').toLowerCase();
+                    break;
+                case 'count':
+                    aVal = a.count || 0;
+                    bVal = b.count || 0;
+                    break;
+                default:
+                    return 0;
+            }
+            
+            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        
+        return sorted;
+    };
+
     const columns = [
-        { key: "name", label: "NOM DE L'OBJET", className: "mf-col--name" },
+        { 
+            key: "name", 
+            label: (
+                <div 
+                    className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity select-none" 
+                    onClick={(e) => { e.stopPropagation(); handleSort('name'); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleSort('name'); } }}
+                    role="button"
+                    tabIndex={0}
+                >
+                    <span>NOM DE L&apos;OBJET</span>
+                    {sortConfig.column === 'name' ? (
+                        <svg 
+                            width="12" 
+                            height="12" 
+                            viewBox="0 0 12 12" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2"
+                            className={`text-[#71717A] ${sortConfig.direction === 'desc' ? 'rotate-180' : ''}`}
+                        >
+                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    ) : (
+                        <svg 
+                            width="12" 
+                            height="12" 
+                            viewBox="0 0 12 12" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="1.5"
+                            className="text-[#A1A1AA] opacity-50"
+                        >
+                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    )}
+                </div>
+            ), 
+            className: "mf-col--name" 
+        },
         ...(devMode ? [
             { key: "fullKey", label: (<div className="relative overflow-visible"><div className="mf-dev-badge"><span>&lt;/&gt;</span> Dev Mode</div>CLÉ TECH</div>), className: "mf-col--key mf-table__header--dev" },
             { key: "fields", label: "CHAMPS", className: "mf-col--type mf-table__header--dev" },
@@ -330,7 +433,7 @@ export default function AppMo() {
                 ) : (
                     <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className={`mf-section__header ${isTableOpen ? 'mf-section__header--open' : ''}`} onClick={() => setIsTableOpen(!isTableOpen)}><div className="mf-section__title-group"><Icons.Products className="mf-section__icon" /><span className="mf-section__title">{search ? 'Résultats de recherche' : 'Tous les Objets Méta'}</span><span className="mf-section__count">{filteredData.length}</span></div><div className="mf-section__arrow"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform duration-200 ${isTableOpen ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6"/></svg></div></div>
-                        {isTableOpen && (<div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label="Table des objets" removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ wrapper: "mf-table__wrapper", th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(column: any) => (<TableColumn key={column.key} align={column.key === "count" || column.key === "actions" || column.key === "menu" ? "center" : "start"} className={column.className}>{column.label}</TableColumn>)}</TableHeader><TableBody items={filteredData} emptyContent={<div className="mf-empty">Aucun objet trouvé.</div>}>{(item: any) => (<TableRow key={item.id}>{(columnKey) => <TableCell>{renderCell(item, columnKey as string)}</TableCell>}</TableRow>)}</TableBody></Table></div>)}
+                        {isTableOpen && (<div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label="Table des objets" removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ wrapper: "mf-table__wrapper", th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(column: any) => (<TableColumn key={column.key} align={column.key === "count" || column.key === "actions" || column.key === "menu" ? "center" : "start"} className={column.className}>{column.label}</TableColumn>)}</TableHeader><TableBody items={sortData(filteredData)} emptyContent={<div className="mf-empty">Aucun objet trouvé.</div>}>{(item: any) => (<TableRow key={item.id}>{(columnKey) => <TableCell>{renderCell(item, columnKey as string)}</TableCell>}</TableRow>)}</TableBody></Table></div>)}
                     </div>
                 )}
             </div>

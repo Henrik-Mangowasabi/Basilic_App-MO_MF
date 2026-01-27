@@ -62,12 +62,27 @@ export const loader = async ({ request }: any) => {
     installedApps.push('custom');
     installedApps.push('test_data');
 
-    const query = (ot: string) => `query { metafieldDefinitions(ownerType: ${ot}, first: 250) { nodes { id name key namespace type { name } description metafieldsCount } } }`;
+    const query = (ot: string, cursor: string | null) => `query getMetafieldDefinitions($cursor: String, $ownerType: MetafieldOwnerType!) { metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id name key namespace type { name } description metafieldsCount } } }`;
     const ots = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
-    const results = await Promise.all(ots.map(async (ot) => { 
-        const r = await admin.graphql(query(ot)); 
-        const j = await r.json(); 
-        return (j.data?.metafieldDefinitions?.nodes || []).map((n: any) => {
+    const results = await Promise.all(ots.map(async (ot) => {
+        let allNodes: any[] = [];
+        let hasNextPage = true;
+        let cursor: string | null = null;
+        
+        // Récupérer TOUS les metafields avec pagination
+        while (hasNextPage) {
+            const r = await admin.graphql(query(ot, cursor), { variables: { cursor, ownerType: ot } }); 
+            const j = await r.json();
+            const data = j.data?.metafieldDefinitions;
+            if (data?.nodes && Array.isArray(data.nodes)) {
+                allNodes = [...allNodes, ...data.nodes];
+            }
+            hasNextPage = data?.pageInfo?.hasNextPage || false;
+            cursor = data?.pageInfo?.endCursor || null;
+            if (allNodes.length >= 10000) break; // Safety limit
+        }
+        
+        return allNodes.map((n: any) => {
             const ns = n.namespace.toLowerCase();
             const isInstalled = installedApps.some((h: string) => ns.includes(h) || h.includes(ns));
             const fullKey = `${n.namespace}.${n.key}`;
