@@ -4,12 +4,16 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect, ty
 const SCAN_DONE_KEY = "basilic_scan_done";
 const MF_RESULTS_KEY = "mf_scan_results";
 const MO_RESULTS_KEY = "mo_scan_results";
+const TEMPLATE_RESULTS_KEY = "template_scan_results";
+const MENU_RESULTS_KEY = "menu_scan_results";
 
 interface ScanContextType {
     isScanning: boolean;
     scanProgress: number;
     mfResults: Set<string>;
     moResults: Set<string>;
+    templateResults: Set<string>;
+    menuResults: Set<string>;
     startScan: () => void;
     hasScanRun: boolean;
 }
@@ -31,18 +35,34 @@ export function ScanProvider({ children }: ScanProviderProps) {
     const [scanProgress, setScanProgress] = useState(0);
     const [mfResults, setMfResults] = useState<Set<string>>(new Set());
     const [moResults, setMoResults] = useState<Set<string>>(new Set());
+    const [templateResults, setTemplateResults] = useState<Set<string>>(new Set());
+    const [menuResults, setMenuResults] = useState<Set<string>>(new Set());
     const [hasScanRun, setHasScanRun] = useState(false);
     const scanAbortRef = useRef<AbortController | null>(null);
     const initialScanDoneRef = useRef(false);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    
+    // Tracking progress for each endpoint to avoid flickering
+    const progressRef = useRef<{ mf: number; mo: number; tpl: number; menu: number }>({ mf: 0, mo: 0, tpl: 0, menu: 0 });
+
+    const updateProgress = useCallback(() => {
+        const { mf, mo, tpl, menu } = progressRef.current;
+        const avg = Math.round((mf + mo + tpl + menu) / 4);
+        setScanProgress(avg);
+    }, []);
 
     // Charger les résultats du cache au démarrage
     useEffect(() => {
         try {
             const mfCached = sessionStorage.getItem(MF_RESULTS_KEY);
             const moCached = sessionStorage.getItem(MO_RESULTS_KEY);
+            const templateCached = sessionStorage.getItem(TEMPLATE_RESULTS_KEY);
+            const menuCached = sessionStorage.getItem(MENU_RESULTS_KEY);
+            
             if (mfCached) setMfResults(new Set(JSON.parse(mfCached)));
             if (moCached) setMoResults(new Set(JSON.parse(moCached)));
+            if (templateCached) setTemplateResults(new Set(JSON.parse(templateCached)));
+            if (menuCached) setMenuResults(new Set(JSON.parse(menuCached)));
             if (sessionStorage.getItem(SCAN_DONE_KEY)) setHasScanRun(true);
         } catch {
             // Ignorer les erreurs de parsing
@@ -73,7 +93,11 @@ export function ScanProvider({ children }: ScanProviderProps) {
             scanAbortRef.current.abort();
         }
         
-        // Timeout de sécurité (2 minutes max)
+        // Reset local progress
+        progressRef.current = { mf: 0, mo: 0, tpl: 0, menu: 0 };
+        setScanProgress(0);
+
+        // Timeout de sécurité (3 minutes max pour scanner tout)
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         timeoutRef.current = setTimeout(() => {
             console.warn("Scan timeout - forcing completion");
@@ -81,23 +105,24 @@ export function ScanProvider({ children }: ScanProviderProps) {
             setScanProgress(0);
             sessionStorage.setItem(SCAN_DONE_KEY, "true");
             setHasScanRun(true);
-        }, 120000);
+        }, 180000);
 
         const abort = new AbortController();
         scanAbortRef.current = abort;
         
         setIsScanning(true);
-        setScanProgress(0);
 
         const basePath = window.location.pathname.includes('/app') 
             ? window.location.pathname.split('/app')[0] + '/app'
             : '/app';
 
         try {
-            // Scanner MF et MO en parallèle
-            const [mfData, moData] = await Promise.all([
-                scanEndpoint(`${basePath}/api/mf-scan`, abort.signal, (p) => setScanProgress(Math.round(p / 2))),
-                scanEndpoint(`${basePath}/api/mo-scan`, abort.signal, (p) => setScanProgress(50 + Math.round(p / 2)))
+            // Scanner MF, MO, Templates et Menus en parallèle
+            const [mfData, moData, templateData, menuData] = await Promise.all([
+                scanEndpoint(`${basePath}/api/mf-scan`, abort.signal, (p) => { progressRef.current.mf = p; updateProgress(); }),
+                scanEndpoint(`${basePath}/api/mo-scan`, abort.signal, (p) => { progressRef.current.mo = p; updateProgress(); }),
+                scanEndpoint(`${basePath}/api/template-scan`, abort.signal, (p) => { progressRef.current.tpl = p; updateProgress(); }),
+                scanEndpoint(`${basePath}/api/menu-scan`, abort.signal, (p) => { progressRef.current.menu = p; updateProgress(); })
             ]);
 
             // Sauvegarder les résultats
@@ -108,6 +133,14 @@ export function ScanProvider({ children }: ScanProviderProps) {
             if (moData.length > 0) {
                 sessionStorage.setItem(MO_RESULTS_KEY, JSON.stringify(moData));
                 setMoResults(new Set(moData));
+            }
+            if (templateData.length > 0) {
+                sessionStorage.setItem(TEMPLATE_RESULTS_KEY, JSON.stringify(templateData));
+                setTemplateResults(new Set(templateData));
+            }
+            if (menuData.length > 0) {
+                sessionStorage.setItem(MENU_RESULTS_KEY, JSON.stringify(menuData));
+                setMenuResults(new Set(menuData));
             }
 
             sessionStorage.setItem(SCAN_DONE_KEY, "true");
@@ -122,7 +155,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
             setScanProgress(0);
             scanAbortRef.current = null;
         }
-    }, []);
+    }, [updateProgress]);
 
     const startScan = useCallback(() => {
         // Réinitialiser le cache pour forcer un nouveau scan
@@ -131,7 +164,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
     }, [runScan]);
 
     return (
-        <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, startScan, hasScanRun }}>
+        <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, templateResults, menuResults, startScan, hasScanRun }}>
             {children}
             
             {/* Modale de scan globale */}
@@ -144,7 +177,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
                                 Scan du code en cours...
                             </div>
                             <div className="text-[13px] text-[#71717A] mb-3">
-                                Analyse des metafields et metaobjects
+                                Analyse des metafields, metaobjects, templates et menus
                             </div>
                             {/* Barre de progression */}
                             <div className="w-full h-2 bg-[#E4E4E7] rounded-full overflow-hidden">

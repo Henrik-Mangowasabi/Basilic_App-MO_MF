@@ -4,6 +4,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { getMetafieldCount, getMetaobjectCount, getMediaCount, getActiveThemeId } from "../utils/graphql-helpers.server";
 import "../styles/metafields-table.css";
+import { useScan } from "../components/ScanProvider";
 import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton, BasilicModal } from "../components/BasilicUI";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 
@@ -61,102 +62,81 @@ function handleFoundInContent(content: string, handle: string): boolean {
     return false;
 }
 
+
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
+    
     const domain = (await admin.graphql(`{ shop { myshopifyDomain } }`).then((r: Response) => r.json())).data?.shop?.myshopifyDomain as string;
     if (!domain) return { menus: [], menusError: "Shop non trouvé.", storeSlug: "", mfCount: 0, moCount: 0, totalTemplates: 0, mediaCount: 0, menuCount: 0, reviewStatusMap: {} as Record<string, "to_review" | "reviewed"> };
 
     const activeThemeId = await getActiveThemeId(admin);
-    const [mfCount, moCount, mediaCount] = await Promise.all([
+    
+    // OPTIMISATION: Paralléliser toutes les requêtes indépendantes
+    const [mfCount, moCount, mediaCount, menusResult, totalTemplates] = await Promise.all([
         getMetafieldCount(admin, domain),
         getMetaobjectCount(admin, domain),
         getMediaCount(admin, domain),
+        // Récupérer les menus
+        (async () => {
+            let menus: { id: string; name: string; handle: string }[] = [];
+            let menusError: string | null = null;
+            try {
+                let cursor: string | null = null;
+                for (;;) {
+                    const res = await admin.graphql(
+                        `query getMenus($cursor: String) {
+                            menus(first: 250, after: $cursor) {
+                                pageInfo { hasNextPage endCursor }
+                                nodes { id title handle }
+                            }
+                        }`,
+                        { variables: { cursor } }
+                    );
+                    const json = (await res.json()) as {
+                        data?: { menus?: { pageInfo?: { hasNextPage?: boolean; endCursor?: string }; nodes?: { id: string; title: string; handle: string }[] } };
+                        errors?: Array<{ message: string }>;
+                    };
+                    const gqlErrors = json.errors;
+                    if (gqlErrors?.length) {
+                        menusError = gqlErrors.map((e) => e.message).join(" ");
+                        break;
+                    }
+                    const data = json.data?.menus;
+                    if (!data?.nodes?.length) break;
+                    menus = [...menus, ...data.nodes.map((n: { id: string; title: string; handle: string }) => ({ id: n.id, name: n.title || n.handle || "-", handle: n.handle || "" }))];
+                    if (!data.pageInfo?.hasNextPage) break;
+                    cursor = data.pageInfo.endCursor;
+                    if (menus.length >= 500) break;
+                }
+            } catch (e) {
+                menusError = e instanceof Error ? e.message : String(e);
+            }
+            return { menus, menusError };
+        })(),
+        // Compter les templates
+        (async () => {
+            if (!activeThemeId) return 0;
+            const assetsRes = await fetch(
+                `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
+                { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
+            );
+            const assetsJson = await assetsRes.json();
+            const allAssets = assetsJson.assets || [];
+            const managedTypes = ["product", "collection", "page", "blog", "article"];
+            return allAssets.filter((a: { key: string }) => {
+                if (!a.key.startsWith("templates/") || !a.key.endsWith(".json")) return false;
+                const t = a.key.replace("templates/", "").split(".")[0];
+                return managedTypes.includes(t);
+            }).length;
+        })()
     ]);
 
-    let menus: { id: string; name: string; handle: string }[] = [];
-    let menusError: string | null = null;
-    try {
-        let cursor: string | null = null;
-        for (;;) {
-            const res = await admin.graphql(
-                `query getMenus($cursor: String) {
-                    menus(first: 250, after: $cursor) {
-                        pageInfo { hasNextPage endCursor }
-                        nodes { id title handle }
-                    }
-                }`,
-                { variables: { cursor } }
-            );
-            const json = (await res.json()) as {
-                data?: { menus?: { pageInfo?: { hasNextPage?: boolean; endCursor?: string }; nodes?: { id: string; title: string; handle: string }[] } };
-                errors?: Array<{ message: string }>;
-            };
-            const gqlErrors = json.errors;
-            if (gqlErrors?.length) {
-                menusError = gqlErrors.map((e) => e.message).join(" ");
-                break;
-            }
-            const data = json.data?.menus;
-            if (!data?.nodes?.length) break;
-            menus = [...menus, ...data.nodes.map((n: { id: string; title: string; handle: string }) => ({ id: n.id, name: n.title || n.handle || "-", handle: n.handle || "" }))];
-            if (!data.pageInfo?.hasNextPage) break;
-            cursor = data.pageInfo.endCursor;
-            if (menus.length >= 500) break;
-        }
-    } catch (e) {
-        menusError = e instanceof Error ? e.message : String(e);
-    }
+    const { menus, menusError } = menusResult;
 
-    let totalTemplates = 0;
-    const handlesInCode = new Set<string>();
-
-    if (activeThemeId) {
-        const assetsRes = await fetch(
-            `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
-            { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
-        );
-        const assetsJson = await assetsRes.json();
-        const allAssets = assetsJson.assets || [];
-        const managedTypes = ["product", "collection", "page", "blog", "article"];
-        totalTemplates = allAssets.filter((a: { key: string }) => {
-            if (!a.key.startsWith("templates/") || !a.key.endsWith(".json")) return false;
-            const t = a.key.replace("templates/", "").split(".")[0];
-            return managedTypes.includes(t);
-        }).length;
-
-        const exts = [".liquid", ".json", ".js", ".css", ".scss", ".ts", ".tsx", ".jsx"];
-        const scannable = allAssets.filter(
-            (a: { key: string }) =>
-                exts.some((e) => a.key.endsWith(e)) &&
-                !a.key.includes("node_modules") &&
-                !a.key.includes(".min.")
-        );
-        const batchSize = 20;
-        for (let i = 0; i < scannable.length; i += batchSize) {
-            const batch = scannable.slice(i, i + batchSize);
-            await Promise.all(
-                batch.map(async (asset: { key: string }) => {
-                    try {
-                        const contentRes = await fetch(
-                            `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`,
-                            { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
-                        );
-                        const contentJson = await contentRes.json();
-                        const content = contentJson.asset?.value || "";
-                        menus.forEach((m) => {
-                            if (handleFoundInContent(content, m.handle)) handlesInCode.add(m.handle);
-                        });
-                    } catch {
-                        // ignore
-                    }
-                })
-            );
-        }
-    }
-
+    // Le scan est géré par le ScanProvider, on retourne juste les menus sans inCode
     const menuData: MenuItem[] = menus.map((m) => ({
         ...m,
-        inCode: handlesInCode.has(m.handle),
+        inCode: false, // Sera mis à jour par le ScanProvider côté client
     }));
 
     let reviewStatusMap: Record<string, "to_review" | "reviewed"> = {};
@@ -286,6 +266,9 @@ export default function AppMenu() {
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<{ single: MenuItem | null; ids: string[] }>({ single: null, ids: [] });
     const [toast, setToast] = useState<{ title: string; msg: string } | null>(null);
+    
+    // Utiliser le contexte de scan global
+    const { isScanning, menuResults, startScan } = useScan();
 
     useEffect(() => {
         if (!actionData) return;
@@ -322,6 +305,10 @@ export default function AppMenu() {
         return `https://admin.shopify.com/store/${storeSlug || "admin"}/content/menus/${menuId}`;
     };
 
+    const handleScanCode = () => {
+        startScan();
+    };
+
     const columns = [
         { key: "name", label: "NOM DU MENU", className: "mf-col--name" },
         { key: "handle", label: "HANDLE", className: "mf-col--key" },
@@ -344,14 +331,16 @@ export default function AppMenu() {
                         <span className="mf-text--key text-[#18181B]">{item.handle || "—"}</span>
                     </div>
                 );
-            case "inCode":
+            case "inCode": {
+                const inCode = menuResults.has(item.handle);
                 return (
                     <div className="mf-cell mf-cell--center mf-cell--badge">
-                        <span className={`mf-badge--code ${item.inCode ? "mf-badge--found" : ""} ${!item.inCode ? "text-[#18181B]" : ""}`}>
-                            {item.inCode ? "Oui" : "Non"}
+                        <span className={`mf-badge--code ${inCode ? "mf-badge--found" : ""} ${!inCode ? "text-[#18181B]" : ""}`}>
+                            {inCode ? "Oui" : "Non"}
                         </span>
                     </div>
                 );
+            }
             case "actions":
                 return (
                     <div className="mf-cell mf-cell--center">
@@ -441,17 +430,17 @@ export default function AppMenu() {
                     <BasilicButton
                         variant="flat"
                         className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]"
-                        isLoading={revalidator.state === "loading"}
-                        onPress={() => revalidator.revalidate()}
+                        isLoading={isScanning}
+                        onPress={handleScanCode}
                         icon={
-                            revalidator.state === "loading" ? null : (
+                            isScanning ? null : (
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>
                                 </svg>
                             )
                         }
                     >
-                        Actualiser / Scan code
+                        Scan code
                     </BasilicButton>
                 </div>
 

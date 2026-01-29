@@ -284,7 +284,7 @@ export default function AppTemplates() {
     const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[] } | null>();
     
     // Utiliser le contexte de scan global
-    const { isScanning, startScan } = useScan();
+    const { isScanning, templateResults, startScan } = useScan();
     
     const [search, setSearch] = useState("");
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "Produits": true });

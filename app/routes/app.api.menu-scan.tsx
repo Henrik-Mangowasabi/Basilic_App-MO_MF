@@ -1,7 +1,8 @@
 import { authenticate } from "../shopify.server";
 
 /**
- * Route API : scan du thème pour les metafields.
+ * Route API : scan du thème pour les menus.
+ * Cherche précisément "handle" avec des guillemets.
  */
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
@@ -15,40 +16,27 @@ export const loader = async ({ request }: { request: Request }) => {
     const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split("/").pop();
     if (!activeThemeId) return new Response(JSON.stringify({ error: "Thème actif non trouvé" }), { status: 400 });
 
-    const query = (ot: string, cursor: string | null) =>
-        `query getMetafieldDefinitions($cursor: String, $ownerType: MetafieldOwnerType!) { 
-            metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { 
-                pageInfo { hasNextPage endCursor } 
-                nodes { namespace key } 
-            } 
-        }`;
-    
-    const ots = ["PRODUCT", "PRODUCTVARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
-    let allFullKeys: string[] = [];
-
-    try {
-        const results = await Promise.all(
-            ots.map(async (ot) => {
-                let nodes: string[] = [];
-                let hasNextPage = true;
-                let cursor: string | null = null;
-                while (hasNextPage) {
-                    const r = await admin.graphql(query(ot, cursor), { variables: { cursor, ownerType: ot } });
-                    const j = await r.json();
-                    const data = j.data?.metafieldDefinitions;
-                    if (data?.nodes) {
-                        nodes.push(...data.nodes.map((n: any) => `${n.namespace}.${n.key}`));
-                    }
-                    hasNextPage = data?.pageInfo?.hasNextPage ?? false;
-                    cursor = data?.pageInfo?.endCursor ?? null;
-                    if (nodes.length >= 2000) break;
+    // 1. Récupérer tous les handles de menus
+    let menuHandles: string[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+        const res = await admin.graphql(
+            `query getMenus($cursor: String) {
+                menus(first: 250, after: $cursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { handle }
                 }
-                return nodes;
-            })
+            }`,
+            { variables: { cursor } }
         );
-        allFullKeys = results.flat();
-    } catch (e) {}
+        const json: any = await res.json();
+        const data = json.data?.menus;
+        if (data?.nodes) menuHandles.push(...data.nodes.map((m: { handle: string }) => m.handle));
+        if (!data?.pageInfo?.hasNextPage) break;
+        cursor = data.pageInfo.endCursor;
+    }
 
+    // 2. Lister les assets
     const assetsRes = await fetch(
         `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
         { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
@@ -60,9 +48,10 @@ export const loader = async ({ request }: { request: Request }) => {
         !a.key.includes('node_modules')
     );
 
+    // 3. Scanner
     const encoder = new TextEncoder();
-    const sse = (data: any) => `data: ${JSON.stringify(data)}\n\n`;
-    const metafieldsInCode = new Set<string>();
+    const sse = (data: object) => "data: " + JSON.stringify(data) + "\n\n";
+    const menusInCode = new Set<string>();
 
     const stream = new ReadableStream({
         async start(controller) {
@@ -81,25 +70,25 @@ export const loader = async ({ request }: { request: Request }) => {
                             const content = json.asset?.value || "";
                             if (!content) return;
 
-                            allFullKeys.forEach(fullKey => {
-                                // Recherche précise : metafields.namespace.key
-                                if (content.includes(`metafields.${fullKey}`) || content.includes(`metafields['${fullKey}']`) || content.includes(`metafields["${fullKey}"]`)) {
-                                    metafieldsInCode.add(fullKey);
+                            menuHandles.forEach((handle) => {
+                                // Recherche précise de "handle" (avec guillemets doubles ou simples)
+                                if (content.includes(`"${handle}"`) || content.includes(`'${handle}'`)) {
+                                    menusInCode.add(handle);
                                 }
                             });
-                        } catch (err) {}
+                        } catch (e) {}
                     }));
                     const progress = Math.min(99, Math.round(((i + batch.length) / scannableAssets.length) * 100));
                     controller.enqueue(encoder.encode(sse({ progress })));
                     await new Promise(r => setTimeout(r, 200));
                 }
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metafieldsInCode) })));
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(menusInCode) })));
             } catch (e) {
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: [], error: String(e) })));
             } finally {
                 controller.close();
             }
-        }
+        },
     });
 
     return new Response(stream, {
