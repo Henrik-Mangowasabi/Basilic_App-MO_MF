@@ -290,15 +290,15 @@ export const action = async ({ request }: any) => {
     if (actionType === "get_assignments") {
         const definitionId = formData.get("definitionId") as string;
         if (!definitionId) return { ok: false, assignments: [] };
-        const owners: { type: string; id: string; title: string; handle?: string }[] = [];
+        const owners: { type: string; id: string; title: string; handle?: string; status?: string }[] = [];
         let cursor: string | null = null;
         const ownerFragments = `
-            ... on Product { __typename id title handle }
+            ... on Product { __typename id title handle status }
             ... on ProductVariant { __typename id title }
             ... on Collection { __typename id title handle }
             ... on Customer { __typename id displayName }
-            ... on Order { __typename id name }
-            ... on DraftOrder { __typename id name }
+            ... on Order { __typename id name displayFulfillmentStatus }
+            ... on DraftOrder { __typename id name status }
             ... on Company { __typename id name }
             ... on Location { __typename id name }
             ... on Market { __typename id name }
@@ -307,38 +307,61 @@ export const action = async ({ request }: any) => {
             ... on Article { __typename id title }
             ... on Shop { __typename id name }
         `;
-        do {
-            const res = await admin.graphql(
-                `query GetMFAssignments($id: ID!, $after: String) {
-                    node(id: $id) {
-                        ... on MetafieldDefinition {
-                            id
-                            metafields(first: 100, after: $after) {
-                                pageInfo { hasNextPage endCursor }
-                                nodes {
-                                    owner {
-                                        __typename
-                                        ${ownerFragments}
+        try {
+            do {
+                const res = await admin.graphql(
+                    `query GetMFAssignments($id: ID!, $after: String) {
+                        node(id: $id) {
+                            ... on MetafieldDefinition {
+                                id
+                                metafields(first: 100, after: $after) {
+                                    pageInfo { hasNextPage endCursor }
+                                    nodes {
+                                        owner {
+                                            __typename
+                                            ${ownerFragments}
+                                        }
                                     }
                                 }
                             }
                         }
+                    }`,
+                    { variables: { id: definitionId, after: cursor } }
+                );
+                const json = await res.json();
+                
+                if (json.errors) {
+                    const msg = json.errors.map((e: any) => e.message).join(", ");
+                    if (msg.includes("Protected Customer Data") || msg.includes("approved to access")) {
+                        return { ok: false, assignments: [], error: "Accès refusé : Cette application n'a pas l'autorisation d'accéder aux données protégées des clients (Metafields). Veuillez configurer les accès dans votre Partner Dashboard." };
                     }
-                }`,
-                { variables: { id: definitionId, after: cursor } }
-            );
-            const json = await res.json();
-            const node = json?.data?.node;
-            if (!node?.metafields?.nodes) break;
-            for (const mf of node.metafields.nodes) {
-                const o = mf?.owner;
-                if (!o?.id) continue;
-                const title = o.title ?? o.name ?? o.displayName ?? o.id.split("/").pop() ?? "";
-                owners.push({ type: o.__typename || "Node", id: o.id, title: String(title), handle: o.handle });
+                    return { ok: false, assignments: [], error: msg };
+                }
+
+                const node = json?.data?.node;
+                if (!node?.metafields?.nodes) break;
+                for (const mf of node.metafields.nodes) {
+                    const o = mf?.owner;
+                    if (!o) continue;
+                    const title = o.title ?? o.name ?? o.displayName ?? o.id.split("/").pop() ?? "";
+                    owners.push({ 
+                        type: o.__typename || "Node", 
+                        id: o.id, 
+                        title: String(title), 
+                        handle: o.handle,
+                        status: o.status || o.displayFulfillmentStatus || o.state || null
+                    });
+                }
+                cursor = node.metafields.pageInfo?.hasNextPage ? node.metafields.pageInfo.endCursor : null;
+            } while (cursor);
+            return { ok: true, assignments: owners };
+        } catch (e: any) {
+            const msg = e.message || String(e);
+            if (msg.includes("Protected Customer Data") || msg.includes("approved to access")) {
+                return { ok: false, assignments: [], error: "Accès refusé : Cette application n'a pas l'autorisation d'accéder aux données protégées des clients (Metafields). Veuillez configurer les accès dans votre Partner Dashboard." };
             }
-            cursor = node.metafields.pageInfo?.hasNextPage ? node.metafields.pageInfo.endCursor : null;
-        } while (cursor);
-        return { ok: true, assignments: owners };
+            return { ok: false, assignments: [], error: "Erreur lors de la récupération des assignations : " + msg };
+        }
     }
 
     return null;
@@ -346,9 +369,9 @@ export const action = async ({ request }: any) => {
 
 export default function AppMf() {
     const { domain, mfData, moCount, totalTemplates, mediaCount, menuCount, reviewStatusMap } = useLoaderData<any>();
-    const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[]; generated?: number; assignments?: { type: string; id: string; title: string; handle?: string }[] } | null>();
+    const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[]; generated?: number; assignments?: { type: string; id: string; title: string; handle?: string; status?: string }[] } | null>();
     const submit = useSubmit();
-    const fetcher = useFetcher<{ ok: boolean; assignments?: { type: string; id: string; title: string; handle?: string }[] }>();
+    const fetcher = useFetcher<{ ok: boolean; assignments?: { type: string; id: string; title: string; handle?: string; status?: string }[] }>();
     const revalidator = useRevalidator();
     
     // Utiliser le contexte de scan global
@@ -595,7 +618,7 @@ export default function AppMf() {
     return (
         <>
             <div className="min-h-screen bg-white animate-in fade-in duration-500">
-                <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
+                <div className="mx-auto px-6 pt-6 pb-32 space-y-6" style={{ maxWidth: "1800px" }}>
                 <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]"><AppBrand /><div className="flex gap-3 items-center"><DevModeToggle isChecked={devMode} onChange={toggleDev} /><BasilicButton 
                     variant="flat" 
                     className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
@@ -667,21 +690,48 @@ export default function AppMf() {
                     </div>
                     {fetcher.state === "loading" || fetcher.state === "submitting" ? (
                         <div className="mf-assignments-modal__loading">Chargement...</div>
+                    ) : (fetcher.data as any)?.error ? (
+                        <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm font-medium">
+                            {(fetcher.data as any).error}
+                        </div>
                     ) : fetcher.data?.assignments?.length ? (
                         <div className="mf-assignments-modal__list">
-                            {fetcher.data.assignments.map((a: { type: string; id: string; title: string; handle?: string }) => (
+                            {fetcher.data.assignments.map((a: { type: string; id: string; title: string; handle?: string; status?: string }) => {
+                                const isDraft = a.status === "DRAFT" || a.status === "PENDING";
+                                const isArchived = a.status === "ARCHIVED" || a.status === "DISABLED";
+                                const isActive = a.status === "ACTIVE" || a.status === "ENABLED" || a.status === "FULFILLED" || (!a.status && a.type !== "Product");
+                                
+                                const getIcon = (type: string) => {
+                                    switch (type) {
+                                        case 'Product': return <Icons.Products />;
+                                        case 'ProductVariant': return <Icons.Variants />;
+                                        case 'Collection': return <Icons.Collections />;
+                                        case 'Customer': return <Icons.Clients />;
+                                        case 'Order':
+                                        case 'DraftOrder': return <Icons.Orders />;
+                                        default: return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
+                                    }
+                                };
+
+                                return (
                                     <div key={a.id} className="mf-assignments-modal__card">
-                                        <div className="mf-assignments-modal__card-icon" aria-hidden>
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                                        <div className={`mf-assignments-modal__card-icon ${isActive ? 'text-[#22C55E]' : (isDraft ? 'text-[#F59E0B]' : 'text-[#F43F5E]')}`} aria-hidden>
+                                            {getIcon(a.type)}
                                         </div>
                                         <div className="mf-assignments-modal__card-body">
-                                            <span className="mf-assignments-modal__card-name">{a.title || a.id}</span>
+                                            <div className="mf-assignments-modal__card-name">{a.title || a.id}</div>
+                                            {a.status && (
+                                                <div className={`text-[10px] font-bold uppercase mt-1 leading-none ${isActive ? 'text-[#22C55E]' : (isDraft ? 'text-[#F59E0B]' : 'text-[#F43F5E]')}`}>
+                                                    {a.status}
+                                                </div>
+                                            )}
                                         </div>
-                                        <a href={getAdminUrlForOwner(a.type, a.id)} target="_blank" rel="noopener noreferrer" className="mf-assignments-modal__card-link" title="Ouvrir dans l’admin">
+                                        <a href={getAdminUrlForOwner(a.type, a.id)} target="_blank" rel="noopener noreferrer" className="mf-assignments-modal__card-link" title="Ouvrir dans l’admin" onClick={e => e.stopPropagation()}>
                                             <Icons.Link />
                                         </a>
                                     </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     ) : (
                         <p className="mf-assignments-modal__empty">Aucune ressource assignée.</p>

@@ -1,8 +1,5 @@
 import { authenticate } from "../shopify.server";
 
-/**
- * Route API : scan du thème pour les types metaobjects.
- */
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
     const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
@@ -43,7 +40,7 @@ export const loader = async ({ request }: { request: Request }) => {
     const assetsJson = await assetsRes.json();
     const allAssets = (assetsJson.assets || []) as { key: string }[];
     const scannableAssets = allAssets.filter(a => 
-        (a.key.endsWith('.liquid') || a.key.endsWith('.json') || a.key.endsWith('.js')) &&
+        (a.key.endsWith('.liquid') || a.key.endsWith('.json')) &&
         !a.key.includes('node_modules')
     );
 
@@ -55,7 +52,7 @@ export const loader = async ({ request }: { request: Request }) => {
         async start(controller) {
             try {
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
-                const batchSize = 8;
+                const batchSize = 10;
                 for (let i = 0; i < scannableAssets.length; i += batchSize) {
                     const batch = scannableAssets.slice(i, i + batchSize);
                     await Promise.all(batch.map(async (asset) => {
@@ -69,8 +66,11 @@ export const loader = async ({ request }: { request: Request }) => {
                             if (!content) return;
 
                             moTypes.forEach(type => {
-                                // Recherche précise : metaobjects.type
-                                if (content.includes(`metaobjects.${type}`) || content.includes(`metaobjects['${type}']`) || content.includes(`metaobjects["${type}"]`)) {
+                                if (metaobjectsInCode.has(type)) return;
+                                // Recherche de metaobjects.type
+                                if (content.includes(`metaobjects.${type}`) || 
+                                    content.includes(`metaobjects['${type}']`) || 
+                                    content.includes(`metaobjects["${type}"]`)) {
                                     metaobjectsInCode.add(type);
                                 }
                             });
@@ -78,11 +78,11 @@ export const loader = async ({ request }: { request: Request }) => {
                     }));
                     const progress = Math.min(99, Math.round(((i + batch.length) / scannableAssets.length) * 100));
                     controller.enqueue(encoder.encode(sse({ progress })));
-                    await new Promise(r => setTimeout(r, 200));
+                    await new Promise(r => setTimeout(r, 50));
                 }
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metaobjectsInCode) })));
             } catch (e) {
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: [], error: String(e) })));
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metaobjectsInCode) })));
             } finally {
                 controller.close();
             }

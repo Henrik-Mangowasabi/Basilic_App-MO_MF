@@ -1,9 +1,5 @@
 import { authenticate } from "../shopify.server";
 
-/**
- * Route API : scan du thème pour les menus.
- * Cherche précisément "handle" avec des guillemets.
- */
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
     const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
@@ -16,7 +12,6 @@ export const loader = async ({ request }: { request: Request }) => {
     const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split("/").pop();
     if (!activeThemeId) return new Response(JSON.stringify({ error: "Thème actif non trouvé" }), { status: 400 });
 
-    // 1. Récupérer tous les handles de menus
     let menuHandles: string[] = [];
     let cursor: string | null = null;
     for (;;) {
@@ -36,7 +31,6 @@ export const loader = async ({ request }: { request: Request }) => {
         cursor = data.pageInfo.endCursor;
     }
 
-    // 2. Lister les assets
     const assetsRes = await fetch(
         `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
         { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
@@ -44,11 +38,10 @@ export const loader = async ({ request }: { request: Request }) => {
     const assetsJson = await assetsRes.json();
     const allAssets = (assetsJson.assets || []) as { key: string }[];
     const scannableAssets = allAssets.filter(a => 
-        (a.key.endsWith('.liquid') || a.key.endsWith('.json') || a.key.endsWith('.js')) &&
+        (a.key.endsWith('.liquid') || a.key.endsWith('.json')) &&
         !a.key.includes('node_modules')
     );
 
-    // 3. Scanner
     const encoder = new TextEncoder();
     const sse = (data: object) => "data: " + JSON.stringify(data) + "\n\n";
     const menusInCode = new Set<string>();
@@ -57,7 +50,7 @@ export const loader = async ({ request }: { request: Request }) => {
         async start(controller) {
             try {
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
-                const batchSize = 8;
+                const batchSize = 10;
                 for (let i = 0; i < scannableAssets.length; i += batchSize) {
                     const batch = scannableAssets.slice(i, i + batchSize);
                     await Promise.all(batch.map(async (asset) => {
@@ -71,7 +64,7 @@ export const loader = async ({ request }: { request: Request }) => {
                             if (!content) return;
 
                             menuHandles.forEach((handle) => {
-                                // Recherche précise de "handle" (avec guillemets doubles ou simples)
+                                // Recherche précise de "handle" avec guillemets
                                 if (content.includes(`"${handle}"`) || content.includes(`'${handle}'`)) {
                                     menusInCode.add(handle);
                                 }
@@ -80,11 +73,11 @@ export const loader = async ({ request }: { request: Request }) => {
                     }));
                     const progress = Math.min(99, Math.round(((i + batch.length) / scannableAssets.length) * 100));
                     controller.enqueue(encoder.encode(sse({ progress })));
-                    await new Promise(r => setTimeout(r, 200));
+                    await new Promise(r => setTimeout(r, 50));
                 }
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(menusInCode) })));
             } catch (e) {
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: [], error: String(e) })));
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(menusInCode) })));
             } finally {
                 controller.close();
             }

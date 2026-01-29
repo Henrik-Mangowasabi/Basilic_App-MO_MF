@@ -389,29 +389,38 @@ tr[role="rowgroup"]::after {
     border-bottom-right-radius: 0;
 }
 
-/* Reset pour la page templates : on retire le bloquage à 40px du premier header et de la première cellule */
-
-/* Fix interactions page templates */
-/* Colonne "NOM DU TEMPLATE" (2e colonne) : largeur 100% */
-.mf-table--templates .mf-template-col-name {
+/* Reset pour la page templates : on fixe la largeur de la colonne checkbox */
+.mf-table--templates th:nth-child(1),
+.mf-table--templates td:nth-child(1) {
+    width: 48px !important;
+    min-width: 48px !important;
+    max-width: 48px !important;
+}
+.mf-table--templates th:nth-child(2),
+.mf-table--templates td:nth-child(2) {
     width: 100% !important;
 }
 
-/* Seule la checkbox (1re cellule) reçoit les clics pour la sélection ; les autres cellules ne propagent pas vers la ligne */
-.mf-table--templates .mf-table__row td:not(:first-child) {
+/* --- BLOCK SELECTION BY ROW CLICK --- */
+/* On bloque les clics sur toutes les cellules SAUF la première (checkbox) */
+.mf-table .mf-table__row td:not(:first-child) {
     pointer-events: none !important;
 }
-.mf-table--templates .mf-table__row td:not(:first-child) .mf-template-cell-no-select {
+
+/* On réactive les clics uniquement pour les éléments interactifs à l'intérieur des cellules */
+.mf-table .mf-table__row td:not(:first-child) a,
+.mf-table .mf-table__row td:not(:first-child) button,
+.mf-table .mf-table__row td:not(:first-child) [role="button"],
+.mf-table .mf-table__row td:not(:first-child) .mf-action-link,
+.mf-table .mf-table__row td:not(:first-child) .mf-badge--count,
+.mf-table .mf-table__row td:not(:first-child) [data-slot="trigger"] {
     pointer-events: auto !important;
 }
 
-.mf-table--templates .mf-table__row, 
-.mf-table--templates .mf-table__header,
-.mf-table--templates .mf-table__row td,
-.mf-table--templates .mf-table__row *,
-.mf-table--templates .mf-table__row .mf-text--title,
-.mf-table--templates .mf-table__row .mf-text--desc {
-    cursor: default !important;
+/* On s'assure que le thead ne bloque rien */
+.mf-table thead td, 
+.mf-table thead th {
+    pointer-events: auto !important;
 }
 
 /* Bleu au hover uniquement sur les lignes du corps du tableau, pas sur le thead */
@@ -1052,6 +1061,8 @@ tr[role="rowgroup"]::after {
 .mf-assignments-modal__card-body {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
 }
 .mf-assignments-modal__card-name {
     font-size: 15px;

@@ -33,132 +33,89 @@ interface ScanProviderProps {
 export function ScanProvider({ children }: ScanProviderProps) {
     const [isScanning, setIsScanning] = useState(false);
     const [scanProgress, setScanProgress] = useState(0);
+    const [hasScanRun, setHasScanRun] = useState(false);
+    
     const [mfResults, setMfResults] = useState<Set<string>>(new Set());
     const [moResults, setMoResults] = useState<Set<string>>(new Set());
     const [templateResults, setTemplateResults] = useState<Set<string>>(new Set());
     const [menuResults, setMenuResults] = useState<Set<string>>(new Set());
-    const [hasScanRun, setHasScanRun] = useState(false);
+
     const scanAbortRef = useRef<AbortController | null>(null);
-    const initialScanDoneRef = useRef(false);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-    
-    // Tracking progress for each endpoint to avoid flickering
     const progressRef = useRef<{ mf: number; mo: number; tpl: number; menu: number }>({ mf: 0, mo: 0, tpl: 0, menu: 0 });
 
     const updateProgress = useCallback(() => {
         const { mf, mo, tpl, menu } = progressRef.current;
-        const avg = Math.round((mf + mo + tpl + menu) / 4);
-        setScanProgress(avg);
+        const total = mf + mo + tpl + menu;
+        setScanProgress(Math.round(total / 4));
     }, []);
 
-    // Charger les résultats du cache au démarrage
+    // Charger le cache
     useEffect(() => {
         try {
-            const mfCached = sessionStorage.getItem(MF_RESULTS_KEY);
-            const moCached = sessionStorage.getItem(MO_RESULTS_KEY);
-            const templateCached = sessionStorage.getItem(TEMPLATE_RESULTS_KEY);
-            const menuCached = sessionStorage.getItem(MENU_RESULTS_KEY);
-            
-            if (mfCached) setMfResults(new Set(JSON.parse(mfCached)));
-            if (moCached) setMoResults(new Set(JSON.parse(moCached)));
-            if (templateCached) setTemplateResults(new Set(JSON.parse(templateCached)));
-            if (menuCached) setMenuResults(new Set(JSON.parse(menuCached)));
-            if (sessionStorage.getItem(SCAN_DONE_KEY)) setHasScanRun(true);
-        } catch {
-            // Ignorer les erreurs de parsing
-        }
-    }, []);
+            const mf = sessionStorage.getItem(MF_RESULTS_KEY);
+            const mo = sessionStorage.getItem(MO_RESULTS_KEY);
+            const tpl = sessionStorage.getItem(TEMPLATE_RESULTS_KEY);
+            const menu = sessionStorage.getItem(MENU_RESULTS_KEY);
+            const done = sessionStorage.getItem(SCAN_DONE_KEY);
 
-    // Lancer le scan automatique au premier chargement (une seule fois par session)
-    useEffect(() => {
-        if (initialScanDoneRef.current) return;
-        if (sessionStorage.getItem(SCAN_DONE_KEY)) {
-            initialScanDoneRef.current = true;
-            setHasScanRun(true);
-            return;
-        }
-        initialScanDoneRef.current = true;
-        
-        // Petit délai pour laisser l'app se charger
-        const timer = setTimeout(() => {
-            runScan();
-        }, 500);
-        
-        return () => clearTimeout(timer);
+            if (mf) setMfResults(new Set(JSON.parse(mf)));
+            if (mo) setMoResults(new Set(JSON.parse(mo)));
+            if (tpl) setTemplateResults(new Set(JSON.parse(tpl)));
+            if (menu) setMenuResults(new Set(JSON.parse(menu)));
+            if (done === "true") setHasScanRun(true);
+        } catch (e) {}
     }, []);
 
     const runScan = useCallback(async () => {
-        // Annuler un scan en cours si besoin
-        if (scanAbortRef.current) {
-            scanAbortRef.current.abort();
-        }
-        
-        // Reset local progress
-        progressRef.current = { mf: 0, mo: 0, tpl: 0, menu: 0 };
-        setScanProgress(0);
-
-        // Timeout de sécurité (3 minutes max pour scanner tout)
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        timeoutRef.current = setTimeout(() => {
-            console.warn("Scan timeout - forcing completion");
-            setIsScanning(false);
-            setScanProgress(0);
-            sessionStorage.setItem(SCAN_DONE_KEY, "true");
-            setHasScanRun(true);
-        }, 180000);
-
+        if (scanAbortRef.current) scanAbortRef.current.abort();
         const abort = new AbortController();
         scanAbortRef.current = abort;
-        
+
         setIsScanning(true);
+        setScanProgress(0);
+        progressRef.current = { mf: 0, mo: 0, tpl: 0, menu: 0 };
 
         const basePath = window.location.pathname.includes('/app') 
             ? window.location.pathname.split('/app')[0] + '/app'
             : '/app';
 
         try {
-            // Scanner MF, MO, Templates et Menus en parallèle
-            const [mfData, moData, templateData, menuData] = await Promise.all([
-                scanEndpoint(`${basePath}/api/mf-scan`, abort.signal, (p) => { progressRef.current.mf = p; updateProgress(); }),
-                scanEndpoint(`${basePath}/api/mo-scan`, abort.signal, (p) => { progressRef.current.mo = p; updateProgress(); }),
-                scanEndpoint(`${basePath}/api/template-scan`, abort.signal, (p) => { progressRef.current.tpl = p; updateProgress(); }),
-                scanEndpoint(`${basePath}/api/menu-scan`, abort.signal, (p) => { progressRef.current.menu = p; updateProgress(); })
-            ]);
+            const endpoints = [
+                { url: `${basePath}/api/mf-scan`, key: 'mf', setter: setMfResults, storage: MF_RESULTS_KEY },
+                { url: `${basePath}/api/mo-scan`, key: 'mo', setter: setMoResults, storage: MO_RESULTS_KEY },
+                { url: `${basePath}/api/template-scan`, key: 'tpl', setter: setTemplateResults, storage: TEMPLATE_RESULTS_KEY },
+                { url: `${basePath}/api/menu-scan`, key: 'menu', setter: setMenuResults, storage: MENU_RESULTS_KEY }
+            ];
 
-            // Sauvegarder les résultats
-            if (mfData.length > 0) {
-                sessionStorage.setItem(MF_RESULTS_KEY, JSON.stringify(mfData));
-                setMfResults(new Set(mfData));
-            }
-            if (moData.length > 0) {
-                sessionStorage.setItem(MO_RESULTS_KEY, JSON.stringify(moData));
-                setMoResults(new Set(moData));
-            }
-            if (templateData.length > 0) {
-                sessionStorage.setItem(TEMPLATE_RESULTS_KEY, JSON.stringify(templateData));
-                setTemplateResults(new Set(templateData));
-            }
-            if (menuData.length > 0) {
-                sessionStorage.setItem(MENU_RESULTS_KEY, JSON.stringify(menuData));
-                setMenuResults(new Set(menuData));
-            }
+            const results = await Promise.all(endpoints.map(async (e) => {
+                const res = await scanEndpoint(e.url, abort.signal, (p) => {
+                    progressRef.current[e.key as keyof typeof progressRef.current] = p;
+                    updateProgress();
+                });
+                e.setter(new Set(res));
+                sessionStorage.setItem(e.storage, JSON.stringify(res));
+                return res;
+            }));
 
             sessionStorage.setItem(SCAN_DONE_KEY, "true");
             setHasScanRun(true);
         } catch (e) {
-            if ((e as Error).name !== "AbortError") {
-                console.error("Scan error:", e);
-            }
+            if ((e as Error).name !== "AbortError") console.error("Scan failed", e);
         } finally {
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
             setIsScanning(false);
-            setScanProgress(0);
             scanAbortRef.current = null;
         }
     }, [updateProgress]);
 
+    // Scan auto au premier load si pas fait
+    useEffect(() => {
+        if (sessionStorage.getItem(SCAN_DONE_KEY) !== "true") {
+            const t = setTimeout(runScan, 1000);
+            return () => clearTimeout(t);
+        }
+    }, [runScan]);
+
     const startScan = useCallback(() => {
-        // Réinitialiser le cache pour forcer un nouveau scan
         sessionStorage.removeItem(SCAN_DONE_KEY);
         runScan();
     }, [runScan]);
@@ -166,29 +123,17 @@ export function ScanProvider({ children }: ScanProviderProps) {
     return (
         <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, templateResults, menuResults, startScan, hasScanRun }}>
             {children}
-            
-            {/* Modale de scan globale */}
             {isScanning && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-[24px] p-8 shadow-2xl flex flex-col items-center gap-4 min-w-[320px]">
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white rounded-[24px] p-8 shadow-2xl flex flex-col items-center gap-4 min-w-[340px]">
                         <div className="w-14 h-14 border-4 border-[#4BB961]/20 border-t-[#4BB961] rounded-full animate-spin" />
-                        <div className="text-center">
-                            <div className="text-[17px] font-semibold text-[#18181B] mb-1">
-                                Scan du code en cours...
+                        <div className="text-center w-full">
+                            <div className="text-[17px] font-semibold text-[#18181B] mb-1">Analyse du code...</div>
+                            <div className="text-[13px] text-[#71717A] mb-4">Recherche des éléments dans vos fichiers Liquid et JSON</div>
+                            <div className="w-full h-2 bg-[#E4E4E7] rounded-full overflow-hidden mb-2">
+                                <div className="h-full bg-[#4BB961] transition-all duration-300 ease-out" style={{ width: `${scanProgress}%` }} />
                             </div>
-                            <div className="text-[13px] text-[#71717A] mb-3">
-                                Analyse des metafields, metaobjects, templates et menus
-                            </div>
-                            {/* Barre de progression */}
-                            <div className="w-full h-2 bg-[#E4E4E7] rounded-full overflow-hidden">
-                                <div 
-                                    className="h-full bg-[#4BB961] transition-all duration-300 ease-out"
-                                    style={{ width: `${scanProgress}%` }}
-                                />
-                            </div>
-                            <div className="text-[12px] text-[#A1A1AA] mt-2">
-                                {scanProgress}%
-                            </div>
+                            <div className="text-[12px] font-bold text-[#4BB961]">{scanProgress}%</div>
                         </div>
                     </div>
                 </div>
@@ -197,26 +142,15 @@ export function ScanProvider({ children }: ScanProviderProps) {
     );
 }
 
-/**
- * Scanner un endpoint SSE et retourner les résultats
- */
-async function scanEndpoint(
-    url: string, 
-    signal: AbortSignal, 
-    onProgress: (progress: number) => void
-): Promise<string[]> {
+async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: number) => void): Promise<string[]> {
     try {
-        const res = await fetch(url, { signal, credentials: "same-origin" });
-        
-        if (!res.ok || !res.body) {
-            console.warn(`Scan endpoint ${url} failed:`, res.status);
-            return [];
-        }
+        const response = await fetch(url, { signal });
+        if (!response.ok || !response.body) return [];
 
-        const reader = res.body.getReader();
+        const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = "";
         let results: string[] = [];
+        let buffer = "";
 
         while (true) {
             const { done, value } = await reader.read();
@@ -224,45 +158,20 @@ async function scanEndpoint(
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
+            buffer = lines.pop() || "";
 
             for (const line of lines) {
                 const trimmed = line.trim();
-                if (!trimmed) continue;
-
+                if (!trimmed || !trimmed.startsWith("data: ")) continue;
                 try {
-                    const raw = trimmed.startsWith("data: ") ? trimmed.slice(6) : trimmed;
-                    const data = JSON.parse(raw) as { progress?: number; results?: string[] };
-                    
-                    if (data.progress !== undefined) {
-                        onProgress(data.progress);
-                    }
-                    if (data.results && Array.isArray(data.results)) {
-                        results = data.results;
-                    }
-                } catch {
-                    // Ignorer les lignes malformées
-                }
+                    const data = JSON.parse(trimmed.slice(6));
+                    if (data.progress !== undefined) onProgress(data.progress);
+                    if (data.results) results = data.results;
+                } catch (e) {}
             }
         }
-
-        // Traiter le reste du buffer
-        if (buffer.trim()) {
-            try {
-                const raw = buffer.trim().startsWith("data: ") ? buffer.trim().slice(6) : buffer.trim();
-                const data = JSON.parse(raw) as { progress?: number; results?: string[] };
-                if (data.results && Array.isArray(data.results)) {
-                    results = data.results;
-                }
-            } catch {
-                // Ignorer
-            }
-        }
-
         return results;
     } catch (e) {
-        if ((e as Error).name === "AbortError") throw e;
-        console.error(`Error scanning ${url}:`, e);
         return [];
     }
 }

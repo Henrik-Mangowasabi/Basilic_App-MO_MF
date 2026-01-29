@@ -408,7 +408,7 @@ export default function AppMedia() {
 
     return (
         <div className="min-h-screen bg-white animate-in fade-in duration-500">
-            <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
+            <div className="mx-auto px-6 pt-6 pb-32 space-y-6" style={{ maxWidth: "1800px" }}>
                 <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]">
                     <AppBrand />
                     <div className="flex gap-3">

@@ -1,8 +1,5 @@
 import { authenticate } from "../shopify.server";
 
-/**
- * Route API : scan du thème pour les metafields.
- */
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
     const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
@@ -15,39 +12,34 @@ export const loader = async ({ request }: { request: Request }) => {
     const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split("/").pop();
     if (!activeThemeId) return new Response(JSON.stringify({ error: "Thème actif non trouvé" }), { status: 400 });
 
-    const query = (ot: string, cursor: string | null) =>
-        `query getMetafieldDefinitions($cursor: String, $ownerType: MetafieldOwnerType!) { 
-            metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { 
-                pageInfo { hasNextPage endCursor } 
-                nodes { namespace key } 
-            } 
-        }`;
+    const mfKeys: string[] = [];
+    const ownerTypes = ["PRODUCT", "VARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
     
-    const ots = ["PRODUCT", "PRODUCTVARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
-    let allFullKeys: string[] = [];
-
-    try {
-        const results = await Promise.all(
-            ots.map(async (ot) => {
-                let nodes: string[] = [];
-                let hasNextPage = true;
-                let cursor: string | null = null;
-                while (hasNextPage) {
-                    const r = await admin.graphql(query(ot, cursor), { variables: { cursor, ownerType: ot } });
-                    const j = await r.json();
-                    const data = j.data?.metafieldDefinitions;
-                    if (data?.nodes) {
-                        nodes.push(...data.nodes.map((n: any) => `${n.namespace}.${n.key}`));
-                    }
-                    hasNextPage = data?.pageInfo?.hasNextPage ?? false;
-                    cursor = data?.pageInfo?.endCursor ?? null;
-                    if (nodes.length >= 2000) break;
+    for (const ownerType of ownerTypes) {
+        let cursor: string | null = null;
+        try {
+            for (;;) {
+                const res = await admin.graphql(
+                    `query getKeys($ownerType: MetafieldOwnerType!, $cursor: String) {
+                        metafieldDefinitions(first: 250, ownerType: $ownerType, after: $cursor) {
+                            pageInfo { hasNextPage endCursor }
+                            nodes { namespace key }
+                        }
+                    }`,
+                    { variables: { ownerType, cursor } }
+                );
+                const json: any = await res.json();
+                const data = json.data?.metafieldDefinitions;
+                if (data?.nodes) {
+                    data.nodes.forEach((n: { namespace: string; key: string }) => {
+                        mfKeys.push(`${n.namespace}.${n.key}`);
+                    });
                 }
-                return nodes;
-            })
-        );
-        allFullKeys = results.flat();
-    } catch (e) {}
+                if (!data?.pageInfo?.hasNextPage) break;
+                cursor = data.pageInfo.endCursor;
+            }
+        } catch (e) {}
+    }
 
     const assetsRes = await fetch(
         `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
@@ -56,19 +48,19 @@ export const loader = async ({ request }: { request: Request }) => {
     const assetsJson = await assetsRes.json();
     const allAssets = (assetsJson.assets || []) as { key: string }[];
     const scannableAssets = allAssets.filter(a => 
-        (a.key.endsWith('.liquid') || a.key.endsWith('.json') || a.key.endsWith('.js')) &&
+        (a.key.endsWith('.liquid') || a.key.endsWith('.json')) &&
         !a.key.includes('node_modules')
     );
 
     const encoder = new TextEncoder();
-    const sse = (data: any) => `data: ${JSON.stringify(data)}\n\n`;
-    const metafieldsInCode = new Set<string>();
+    const sse = (data: object) => "data: " + JSON.stringify(data) + "\n\n";
+    const mfInCode = new Set<string>();
 
     const stream = new ReadableStream({
         async start(controller) {
             try {
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
-                const batchSize = 8;
+                const batchSize = 10;
                 for (let i = 0; i < scannableAssets.length; i += batchSize) {
                     const batch = scannableAssets.slice(i, i + batchSize);
                     await Promise.all(batch.map(async (asset) => {
@@ -81,25 +73,30 @@ export const loader = async ({ request }: { request: Request }) => {
                             const content = json.asset?.value || "";
                             if (!content) return;
 
-                            allFullKeys.forEach(fullKey => {
-                                // Recherche précise : metafields.namespace.key
-                                if (content.includes(`metafields.${fullKey}`) || content.includes(`metafields['${fullKey}']`) || content.includes(`metafields["${fullKey}"]`)) {
-                                    metafieldsInCode.add(fullKey);
+                            mfKeys.forEach((fullKey) => {
+                                if (mfInCode.has(fullKey)) return;
+                                if (content.includes(`metafields.${fullKey}`)) {
+                                    mfInCode.add(fullKey);
+                                    return;
+                                }
+                                const [ns, key] = fullKey.split('.');
+                                if (content.includes(`metafields['${ns}']['${key}']`) || content.includes(`metafields["${ns}"]["${key}"]`)) {
+                                    mfInCode.add(fullKey);
                                 }
                             });
-                        } catch (err) {}
+                        } catch (e) {}
                     }));
                     const progress = Math.min(99, Math.round(((i + batch.length) / scannableAssets.length) * 100));
                     controller.enqueue(encoder.encode(sse({ progress })));
-                    await new Promise(r => setTimeout(r, 200));
+                    await new Promise(r => setTimeout(r, 50));
                 }
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metafieldsInCode) })));
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(mfInCode) })));
             } catch (e) {
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: [], error: String(e) })));
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(mfInCode) })));
             } finally {
                 controller.close();
             }
-        }
+        },
     });
 
     return new Response(stream, {
