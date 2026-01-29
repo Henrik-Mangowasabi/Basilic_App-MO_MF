@@ -498,7 +498,7 @@ export default function AppMenu() {
                                 selectionBehavior={"checkbox" as any}
                                 selectedKeys={selectedKeys}
                                 onSelectionChange={(k) => setSelectedKeys(k as Set<string>)}
-                                className="mf-table"
+                                className="mf-table mf-table--menus"
                                 classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}
                             >
                                 <TableHeader columns={columns}>

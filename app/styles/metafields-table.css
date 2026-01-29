@@ -424,6 +424,36 @@ tr[role="rowgroup"]::after {
     background: rgba(0, 111, 238, 0.20) !important;
 }
 
+/* Table Menus : fond blanc pour toutes les lignes et colonnes (pas de gris) */
+.mf-table--menus tbody .mf-table__row {
+    background-color: white !important;
+}
+.mf-table--menus tbody .mf-table__row .mf-table__cell {
+    background-color: transparent !important;
+}
+/* Colonnes HANDLE et DANS LE CODE : plus de fond gris */
+.mf-table--menus .mf-cell--key,
+.mf-table--menus .mf-cell--badge,
+.mf-table--menus .mf-cell--code {
+    background-color: transparent !important;
+}
+.mf-table--menus tbody .mf-table__row[data-selected="true"],
+.mf-table--menus tbody .mf-table__row[data-hover="true"] {
+    background-color: rgba(0, 111, 238, 0.20) !important;
+}
+.mf-table--menus tbody .mf-table__row[data-selected="true"] .mf-table__cell,
+.mf-table--menus tbody .mf-table__row[data-hover="true"] .mf-table__cell {
+    background-color: transparent !important;
+}
+.mf-table--menus tbody .mf-table__row[data-selected="true"] .mf-cell--key,
+.mf-table--menus tbody .mf-table__row[data-selected="true"] .mf-cell--badge,
+.mf-table--menus tbody .mf-table__row[data-selected="true"] .mf-cell--code,
+.mf-table--menus tbody .mf-table__row[data-hover="true"] .mf-cell--key,
+.mf-table--menus tbody .mf-table__row[data-hover="true"] .mf-cell--badge,
+.mf-table--menus tbody .mf-table__row[data-hover="true"] .mf-cell--code {
+    background-color: transparent !important;
+}
+
 /* Forcer les coins du bas à 0 */
 .mf-table__header {
     border-bottom-left-radius: 0 !important;
