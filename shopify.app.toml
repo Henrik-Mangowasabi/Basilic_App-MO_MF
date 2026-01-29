@@ -22,7 +22,7 @@ api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,read_themes"
+scopes = "write_products,read_themes,read_online_store_navigation"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
@@ -39,6 +39,10 @@ link = "/app/mo"
 [[navigation.left]]
 label = "Templates"
 link = "/app/templates"
+
+[[navigation.left]]
+label = "Menus"
+link = "/app/menu"
 
 [[navigation.left]]
 label = "Médias"

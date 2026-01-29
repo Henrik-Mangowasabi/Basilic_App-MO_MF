@@ -33,3 +33,26 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+// Statut de review par ligne (metafields / metaobjects) — partagé entre utilisateurs et persisté au rechargement
+model ItemReviewStatus {
+  id     String   @id @default(cuid())
+  shop   String
+  itemId String   // ex: gid://shopify/MetafieldDefinition/xxx
+  status String   // 'to_review' | 'reviewed'
+  source String   // 'mf' | 'mo'
+  @@unique([shop, itemId, source])
+  @@index([shop, source])
+  @@index([itemId])
+}
+
+// Cache serveur pour les counts (évite de refaire les requêtes GraphQL lourdes)
+model CountCache {
+  id        String   @id @default(cuid())
+  shop      String
+  cacheKey  String   // 'mfCount', 'moCount', 'mediaCount', etc.
+  value     Int
+  updatedAt DateTime @default(now()) @updatedAt
+  @@unique([shop, cacheKey])
+  @@index([shop])
+}

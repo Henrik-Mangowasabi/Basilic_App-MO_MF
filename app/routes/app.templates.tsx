@@ -1,7 +1,10 @@
-import { useState, useMemo } from "react";
-import { useLoaderData, useLocation, useRevalidator } from "react-router";
+import { useState, useMemo, useEffect } from "react";
+import { useLoaderData, useLocation, useRevalidator, useSubmit, useActionData } from "react-router";
 import { authenticate, apiVersion } from "../shopify.server";
+import db from "../db.server";
+import { getMetaobjectCount, getMetafieldCount, getMediaCount, getMenuCount } from "../utils/graphql-helpers.server";
 import "../styles/metafields-table.css";
+import { useScan } from "../components/ScanProvider";
 import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton } from "../components/BasilicUI";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
 
@@ -44,7 +47,16 @@ export const loader = async ({ request }: { request: Request }) => {
     const themesRes = await admin.graphql(`{ themes(first: 5, roles: [MAIN]) { nodes { id name } } }`);
     const themesJson = await themesRes.json();
     const activeTheme = themesJson.data?.themes?.nodes?.[0];
-    if (!activeTheme) return { templateData: {}, moCount: 0, mfCount: 0, themeId: null, totalTemplates: 0 };
+    if (!activeTheme) {
+        let reviewStatusMapEarly: Record<string, "to_review" | "reviewed"> = {};
+        try {
+            const rows = await db.itemReviewStatus.findMany({ where: { shop: session.shop, source: "templates" }, select: { itemId: true, status: true } });
+            rows.forEach((r: { itemId: string; status: string }) => { reviewStatusMapEarly[r.itemId] = r.status as "to_review" | "reviewed"; });
+        } catch {
+            // ignore
+        }
+        return { templateData: {}, moCount: 0, mfCount: 0, themeId: null, totalTemplates: 0, mediaCount: 0, shop: session.shop, reviewStatusMap: reviewStatusMapEarly };
+    }
     const themeId = activeTheme.id.split('/').pop();
 
     // 2. Fetch Assets REST
@@ -192,91 +204,129 @@ export const loader = async ({ request }: { request: Request }) => {
         });
     });
 
-    // 4. Counts
+    // 4. Counts - OPTIMISATION: Utiliser le cache et paralléliser
     const managedTypes = ['product', 'collection', 'page', 'blog', 'article'];
     const totalTemplatesCount = managedTypes.reduce((acc, type) => acc + (templateData[type]?.length || 0), 0);
     
-    // Metaobjects Count - Count all with pagination
-    let moCount = 0;
-    let hasNextMoPage = true;
-    let moCursor: string | null = null;
-    while (hasNextMoPage) {
-        const moAllRes = await admin.graphql(`query getMetaobjectDefinitionsCount($cursor: String) { metaobjectDefinitions(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: moCursor } });
-        const moAllJson: any = await moAllRes.json();
-        const data: any = moAllJson.data?.metaobjectDefinitions;
-        if (data?.nodes && Array.isArray(data.nodes)) {
-            moCount += data.nodes.length;
-        }
-        hasNextMoPage = data?.pageInfo?.hasNextPage || false;
-        moCursor = data?.pageInfo?.endCursor || null;
-        if (moCount >= 10000) break; // Safety limit
+    const shopDomain = session.shop;
+    
+    // OPTIMISATION: Tous les counts en parallèle avec cache
+    const [moCount, mfCount, mediaCount, menuCount] = await Promise.all([
+        getMetaobjectCount(admin, shopDomain),
+        getMetafieldCount(admin, shopDomain),
+        getMediaCount(admin, shopDomain),
+        getMenuCount(admin, shopDomain)
+    ]);
+    let reviewStatusMap: Record<string, "to_review" | "reviewed"> = {};
+    try {
+        const reviewRows = await db.itemReviewStatus.findMany({
+            where: { shop: shopDomain, source: "templates" },
+            select: { itemId: true, status: true }
+        });
+        reviewRows.forEach((r: { itemId: string; status: string }) => { reviewStatusMap[r.itemId] = r.status as "to_review" | "reviewed"; });
+    } catch {
+        // Table absente ou client non régénéré
     }
 
-    // Metafields Count - Count all with pagination (comme app.mf.tsx)
-    const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
-    const mfCounts = await Promise.all(resources.map(async (r) => {
+    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId, mediaCount, menuCount, shop: session.shop, reviewStatusMap };
+};
+
+export const action = async ({ request }: { request: Request }) => {
+    const { admin } = await authenticate.admin(request);
+    const formData = await request.formData();
+    const actionType = formData.get("action");
+
+    if (actionType === "set_review_status") {
         try {
-            let count = 0;
-            let hasNextPage = true;
-            let cursor: string | null = null;
-            while (hasNextPage) {
-                const res = await admin.graphql(`query getMetafieldDefinitionsCount($cursor: String, $ownerType: MetafieldOwnerType!) { metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor, ownerType: r } });
-                const json = await res.json();
-                const data = json?.data?.metafieldDefinitions;
-                if (data?.nodes && Array.isArray(data.nodes)) {
-                    count += data.nodes.length;
-                }
-                hasNextPage = data?.pageInfo?.hasNextPage || false;
-                cursor = data?.pageInfo?.endCursor || null;
-                if (count >= 10000) break; // Safety limit
+            const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
+            const shopJson = await shopRes.json();
+            const shop = shopJson.data?.shop?.myshopifyDomain;
+            if (!shop) return { ok: false, errors: [{ message: "Shop non trouvé" }] };
+            const ids = JSON.parse((formData.get("ids") as string) || "[]") as string[];
+            const status = (formData.get("status") as string) as "to_review" | "reviewed";
+            if (!ids.length || !status || !["to_review", "reviewed"].includes(status)) return { ok: false, errors: [{ message: "Paramètres invalides" }] };
+            for (const itemId of ids) {
+                await db.itemReviewStatus.upsert({
+                    where: { shop_itemId_source: { shop, itemId, source: "templates" } },
+                    create: { shop, itemId, status, source: "templates" },
+                    update: { status }
+                });
             }
-            return count;
-        } catch (e) { 
-            console.error(`Error counting metafields for ${r}:`, e);
-            return 0; 
+            return { ok: true, action: "set_review_status" };
+        } catch (e) {
+            return { ok: false, errors: [{ message: "Base de données non prête." }] };
         }
-    }));
-    const mfCount = mfCounts.reduce((acc, curr) => acc + curr, 0);
-
-    // 5. Media Count - Count all files with pagination
-    let mediaCount = 0;
-    let hasNextFilePage = true;
-    let fileCursor: string | null = null;
-    while (hasNextFilePage) {
-        const filesRes = await admin.graphql(`query getFilesCount($cursor: String) { files(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: fileCursor } });
-        const filesJson: any = await filesRes.json();
-        const data: any = filesJson.data?.files;
-        if (data?.nodes && Array.isArray(data.nodes)) {
-            mediaCount += data.nodes.length;
-        }
-        hasNextFilePage = data?.pageInfo?.hasNextPage || false;
-        fileCursor = data?.pageInfo?.endCursor || null;
-        if (mediaCount >= 10000) break; // Safety limit
     }
 
-    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId, mediaCount, shop: session.shop };
+    if (actionType === "clear_review_status") {
+        try {
+            const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
+            const shopJson = await shopRes.json();
+            const shop = shopJson.data?.shop?.myshopifyDomain;
+            if (!shop) return { ok: false, errors: [{ message: "Shop non trouvé" }] };
+            const ids = JSON.parse((formData.get("ids") as string) || "[]") as string[];
+            if (!ids.length) return { ok: false, errors: [{ message: "Aucun id" }] };
+            await db.itemReviewStatus.deleteMany({ where: { shop, itemId: { in: ids }, source: "templates" } });
+            return { ok: true, action: "clear_review_status" };
+        } catch (e) {
+            return { ok: false, errors: [{ message: "Base de données non prête." }] };
+        }
+    }
+
+    return null;
 };
 
 export default function AppTemplates() {
-    const { templateData, moCount, mfCount, totalTemplates, mediaCount, shop } = useLoaderData<typeof loader>();
+    const { templateData, moCount, mfCount, totalTemplates, mediaCount, menuCount, shop, reviewStatusMap } = useLoaderData<typeof loader>();
     const location = useLocation();
     const revalidator = useRevalidator();
+    const submit = useSubmit();
+    const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[] } | null>();
+    
+    // Utiliser le contexte de scan global
+    const { isScanning, startScan } = useScan();
+    
     const [search, setSearch] = useState("");
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "Produits": true });
     const [modalOpen, setModalOpen] = useState(false);
     const [modalData, setModalData] = useState<{ template: TemplateItem; type: 'active' | 'inactive' } | null>(null);
+    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (!actionData?.ok || !actionData?.action) return;
+        if (actionData.action === "set_review_status" || actionData.action === "clear_review_status") {
+            setSelectedKeys(new Set());
+            revalidator.revalidate();
+        }
+    }, [actionData, revalidator]);
+
+    const handleOnSelectionChange = (sectionData: TemplateItem[], keys: Set<string> | "all") => {
+        if (keys === "all") {
+            const newSet = new Set(selectedKeys);
+            sectionData.forEach((d) => newSet.add(d.key));
+            setSelectedKeys(newSet);
+        } else {
+            const currentTableKeys = new Set(sectionData.map((d) => d.key));
+            const otherKeys = new Set([...selectedKeys].filter((k) => !currentTableKeys.has(k)));
+            const final = new Set([...otherKeys, ...keys]);
+            setSelectedKeys(final);
+        }
+    };
 
     const columns = [
-        { key: "name", label: "NOM DU TEMPLATE", className: "grow" },
+        { key: "name", label: "NOM DU TEMPLATE", className: "mf-template-col-name" },
         { key: "updated", label: "DATE DE CRÉATION", className: "w-[180px] whitespace-nowrap" },
         { key: "countActive", label: "ASSIGNATIONS ACTIVES", className: "w-[180px] whitespace-nowrap" },
         { key: "countInactive", label: "ASSIGNATIONS INACTIVES", className: "w-[180px] whitespace-nowrap" }
     ];
 
+    /* Empêche tout événement pointer/clic sur les cellules de déclencher la sélection (React Aria utilise usePress) */
+    const stopRowSelect = (e: React.MouseEvent | React.PointerEvent) => e.stopPropagation();
+
     const renderCell = (item: TemplateItem, columnKey: React.Key) => {
         switch (columnKey) {
             case "name": return (
-                <div className="mf-cell mf-cell--multi">
+                <div className="mf-cell mf-cell--multi w-full mf-template-cell-no-select" onClick={stopRowSelect} onPointerDown={stopRowSelect} onPointerUp={stopRowSelect} onMouseDown={stopRowSelect} onMouseUp={stopRowSelect}>
                     <span className="mf-text--title">
                         {item.suffix ? `${item.type}.${item.suffix}` : item.type}
                     </span>
@@ -286,7 +336,7 @@ export default function AppTemplates() {
                 </div>
             );
             case "updated": return (
-                <div className="mf-cell mf-cell--start">
+                <div className="mf-cell mf-cell--start w-full mf-template-cell-no-select" onClick={stopRowSelect} onPointerDown={stopRowSelect} onPointerUp={stopRowSelect} onMouseDown={stopRowSelect} onMouseUp={stopRowSelect}>
                     <span className="text-[14px] text-[#71717A]">{new Date(item.updated_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                 </div>
             );
@@ -295,10 +345,11 @@ export default function AppTemplates() {
                 const label = labels[item.type] || item.type;
                 const isClickable = item.countActive > 0;
                 return (
-                    <div className="mf-cell mf-cell--center whitespace-nowrap">
+                    <div className="mf-cell mf-cell--center whitespace-nowrap w-full mf-template-cell-no-select" onClick={stopRowSelect} onPointerDown={stopRowSelect} onPointerUp={stopRowSelect} onMouseDown={stopRowSelect} onMouseUp={stopRowSelect}>
                         <span 
                             className={`mf-badge--count ${item.countActive > 0 ? 'bg-[#4BB961]/10 text-[#15803D]' : 'bg-[#E4E4E7]/50 text-[#71717A]'} ${isClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                            onClick={isClickable ? () => {
+                            onClick={isClickable ? (e: React.MouseEvent) => {
+                                e.stopPropagation();
                                 setModalData({ template: item, type: 'active' });
                                 setModalOpen(true);
                             } : undefined}
@@ -322,10 +373,11 @@ export default function AppTemplates() {
                 const label = labels[item.type] || item.type;
                 const isClickable = item.countInactive > 0;
                 return (
-                    <div className="mf-cell mf-cell--center whitespace-nowrap">
+                    <div className="mf-cell mf-cell--center whitespace-nowrap w-full mf-template-cell-no-select" onClick={stopRowSelect} onPointerDown={stopRowSelect} onPointerUp={stopRowSelect} onMouseDown={stopRowSelect} onMouseUp={stopRowSelect}>
                         <span 
                             className={`mf-badge--count ${item.countInactive > 0 ? 'bg-[#F43F5E]/10 text-[#DC2626]' : 'bg-[#E4E4E7]/50 text-[#71717A]'} ${isClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                            onClick={isClickable ? () => {
+                            onClick={isClickable ? (e: React.MouseEvent) => {
+                                e.stopPropagation();
                                 setModalData({ template: item, type: 'inactive' });
                                 setModalOpen(true);
                             } : undefined}
@@ -371,16 +423,16 @@ export default function AppTemplates() {
                     <BasilicButton 
                         variant="flat" 
                         className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
-                        isLoading={revalidator.state === "loading"}
-                        onPress={() => revalidator.revalidate()} 
-                        icon={revalidator.state === "loading" ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
+                        isLoading={isScanning}
+                        onPress={() => startScan()} 
+                        icon={isScanning ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
                     >
                         Scan Code
                     </BasilicButton>
                 </div>
 
                 <div className="flex items-center justify-between w-full">
-                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount }} />
+                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount, menu: menuCount }} />
                     <div className="flex-shrink-0" style={{ width: '320px' }}>
                         <BasilicSearch value={search} onValueChange={setSearch} placeholder="Rechercher un template..." />
                     </div>
@@ -397,15 +449,20 @@ export default function AppTemplates() {
                                 </div>
                             </div>
                             <div className="mf-table__base">
-                                <Table aria-label="Résultats" removeWrapper selectionMode="none" className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
+                                <Table aria-label="Résultats" removeWrapper selectionMode="multiple" selectionBehavior="checkbox" onRowAction={() => {}} selectedKeys={new Set([...selectedKeys].filter((k) => filteredSearch.some((d: TemplateItem) => d.key === k)))} onSelectionChange={(keys) => handleOnSelectionChange(filteredSearch, keys as Set<string> | "all")} className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
                                     <TableHeader columns={columns}>{(c) => <TableColumn key={c.key} align={c.key === "countActive" || c.key === "countInactive" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>}</TableHeader>
-                                    <TableBody items={filteredSearch}>{(item) => <TableRow key={item.key}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>}</TableBody>
+                                    <TableBody items={filteredSearch}>{(item: TemplateItem) => <TableRow key={item.key} className={reviewStatusMap?.[item.key] === "to_review" ? "mf-table__row--to-review" : reviewStatusMap?.[item.key] === "reviewed" ? "mf-table__row--reviewed" : undefined}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>}</TableBody>
                                 </Table>
                             </div>
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-20 bg-[#F4F4F5]/50 rounded-[32px] border-2 border-dashed border-[#E4E4E7]"><div className="text-[17px] font-semibold text-[#18181B]">Aucun résultat trouvé.</div></div>
                     )
+                ) : allItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 bg-[#F4F4F5]/50 rounded-[32px] border-2 border-dashed border-[#E4E4E7] animate-in fade-in duration-300">
+                        <div className="text-[17px] font-semibold text-[#18181B] mb-2">Aucun template trouvé</div>
+                        <div className="text-[14px] text-[#71717A] text-center max-w-md">Votre thème actif n&apos;a pas encore de fichiers templates (product, collection, page, blog, article). Les templates s&apos;afficheront ici une fois présents dans le thème.</div>
+                    </div>
                 ) : (
                     <div className="space-y-4">
                         {sections.map(s => {
@@ -420,9 +477,9 @@ export default function AppTemplates() {
                                     </div>
                                     {isOpen && (
                                         <div className="mf-table__base">
-                                            <Table aria-label={s.label} removeWrapper selectionMode="none" className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
+                                            <Table aria-label={s.label} removeWrapper selectionMode="multiple" selectionBehavior="checkbox" onRowAction={() => {}} selectedKeys={new Set([...selectedKeys].filter((k) => data.some((d: TemplateItem) => d.key === k)))} onSelectionChange={(keys) => handleOnSelectionChange(data, keys as Set<string> | "all")} className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
                                                 <TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "countActive" || c.key === "countInactive" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader>
-                                                <TableBody items={data} emptyContent="Aucun template trouvé.">{(item: any) => (<TableRow key={item.key}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody>
+                                                <TableBody items={data} emptyContent="Aucun template trouvé.">{(item: any) => (<TableRow key={item.key} className={reviewStatusMap?.[item.key] === "to_review" ? "mf-table__row--to-review" : reviewStatusMap?.[item.key] === "reviewed" ? "mf-table__row--reviewed" : undefined}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody>
                                             </Table>
                                         </div>
                                     )}
@@ -432,6 +489,23 @@ export default function AppTemplates() {
                     </div>
                 )}
             </div>
+
+            {selectedKeys.size > 0 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10">
+                        <div className="flex items-center gap-3">
+                            <span className="text-[14px] font-medium text-white">{selectedKeys.size} sélectionnés</span>
+                            <button onClick={() => setSelectedKeys(new Set())} className="text-[#A1A1AA] hover:text-white transition-colors" aria-label="Tout désélectionner">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><g opacity="0.8"><path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/><path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></g></svg>
+                            </button>
+                        </div>
+                        <div className="h-6 w-[1px] bg-[#3F3F46]"></div>
+                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys))); fd.append("status", "to_review"); submit(fd, { method: "post" }); }} className="bg-[#71717A] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#52525B] transition-colors gap-2">À review</Button>
+                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys))); fd.append("status", "reviewed"); submit(fd, { method: "post" }); }} className="bg-[#3F3F46] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#27272A] transition-colors gap-2">Review</Button>
+                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "clear_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys))); submit(fd, { method: "post" }); }} variant="flat" className="text-[#A1A1AA] font-medium px-4 h-[36px] rounded-full hover:bg-white/10 hover:text-white transition-colors">Réinitialiser</Button>
+                    </div>
+                </div>
+            )}
 
             {/* Modal pour afficher les produits assignés */}
             <Modal 

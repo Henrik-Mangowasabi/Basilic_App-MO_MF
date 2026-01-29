@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
-import { useLoaderData, useSubmit, useFetcher, useRevalidator } from "react-router";
+import { useLoaderData, useSubmit, useFetcher, useRevalidator, useActionData, useLocation, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
+import db from "../db.server";
+import { getMetafieldCount, getMediaCount, getMenuCount, getActiveThemeId } from "../utils/graphql-helpers.server";
 import "../styles/metafields-table.css";
+import { useScan } from "../components/ScanProvider";
 import { AppBrand, DevModeToggle, BasilicButton, BasilicSearch, NavigationTabs, BasilicModal } from "../components/BasilicUI";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 
@@ -19,121 +22,100 @@ const TRAD: Record<string, string> = { 'single_line_text_field': 'Texte', 'multi
 const translateType = (t: string) => (!t ? '-' : t.startsWith('list.') ? `Liste ${TRAD[t.replace('list.', '')] || t.replace('list.', '')}` : TRAD[t] || t);
 
 export const loader = async ({ request }: any) => {
-    const { admin } = await authenticate.admin(request);
+    const { admin, session } = await authenticate.admin(request);
+
+    // OPTIMISATION: Récupérer shop domain et thème ID en parallèle avec les metaobjects
+    const shopPromise = admin.graphql(`{ shop { myshopifyDomain } }`).then(r => r.json()).then(j => j?.data?.shop?.myshopifyDomain || '');
+    const themePromise = getActiveThemeId(admin);
     
-    // Fetch ALL Metaobject Definitions with pagination
-    let allMoNodes: any[] = [];
-    let hasNextMoPage = true;
-    let moCursor: string | null = null;
-    
-    while (hasNextMoPage) {
-        const moRes = await admin.graphql(`
-            query getMetaobjectDefinitions($cursor: String) {
-                metaobjectDefinitions(first: 250, after: $cursor) {
-                    pageInfo { hasNextPage endCursor }
-                    nodes {
-                        id
-                        name
-                        type
-                        description
-                        metaobjectsCount
-                        fieldDefinitions {
-                            name
-                            key
-                            type { name }
-                            required
+    // Fetch metaobject definitions
+    const moDefsPromise = (async () => {
+        let allMoNodes: any[] = [];
+        let hasNextMoPage = true;
+        let moCursor: string | null = null;
+        
+        while (hasNextMoPage) {
+            const moRes = await admin.graphql(`
+                query getMetaobjectDefinitions($cursor: String) {
+                    metaobjectDefinitions(first: 250, after: $cursor) {
+                        pageInfo { hasNextPage endCursor }
+                        nodes {
+                            id name type description metaobjectsCount
+                            fieldDefinitions { name key type { name } required validations { name value } }
                         }
                     }
                 }
+            `, { variables: { cursor: moCursor } });
+            
+            const moJson: any = await moRes.json();
+            const data = moJson.data?.metaobjectDefinitions;
+            
+            if (data?.nodes?.length) {
+                allMoNodes = [...allMoNodes, ...data.nodes];
             }
-        `, { variables: { cursor: moCursor } });
-        
-        const moJson: any = await moRes.json();
-        const data: any = moJson.data?.metaobjectDefinitions;
-        
-        if (data?.nodes && Array.isArray(data.nodes)) {
-            allMoNodes = [...allMoNodes, ...data.nodes];
+            hasNextMoPage = data?.pageInfo?.hasNextPage || false;
+            moCursor = data?.pageInfo?.endCursor || null;
+            if (moJson.errors || allMoNodes.length >= 10000) break;
         }
-        
-        hasNextMoPage = data?.pageInfo?.hasNextPage || false;
-        moCursor = data?.pageInfo?.endCursor || null;
-        
-        // Error handling
-        if (moJson.errors) {
-            console.error("Error fetching metaobject definitions:", moJson.errors);
-            break;
-        }
-        
-        // Safety limit
-        if (allMoNodes.length >= 10000) break;
-    }
+        return allMoNodes;
+    })();
+
+    // Attendre le domain pour les autres requêtes
+    const shopDomain = await shopPromise;
+    const activeThemeId = await themePromise;
     
-    const moData = allMoNodes.map((n: any) => ({ ...n, count: n.metaobjectsCount, fieldsCount: n.fieldDefinitions.length, fieldDefinitions: n.fieldDefinitions.map((f: any) => ({ ...f, typeDisplay: translateType(f.type?.name) })), fullKey: n.type, code_usage: 'Non' }));
-    const shopRes = await admin.graphql(`{ shop { name myshopifyDomain } }`);
-    const shopJson = await shopRes.json();
-    const shopDomain = shopJson?.data?.shop?.myshopifyDomain || '';
-    // Metafields Count - Count all with pagination (comme app.mf.tsx)
-    let mfCount = 0;
+    // OPTIMISATION: Lancer counts, templates et menuCount en parallèle
+    const [allMoNodes, mfCount, mediaCount, totalTemplates, menuCount] = await Promise.all([
+        moDefsPromise,
+        getMetafieldCount(admin, shopDomain),
+        getMediaCount(admin, shopDomain),
+        (async () => {
+            if (!activeThemeId) return 0;
+            const assetsRes = await fetch(`https://${shopDomain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`, {
+                headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
+            });
+            const assetsJson = await assetsRes.json();
+            const managedTypes = ['product', 'collection', 'page', 'blog', 'article'];
+            return (assetsJson.assets || []).filter((a: any) => {
+                if (!a.key.startsWith('templates/') || !a.key.endsWith('.json')) return false;
+                const type = a.key.replace('templates/', '').split('.')[0];
+                return managedTypes.includes(type);
+            }).length;
+        })(),
+        getMenuCount(admin, shopDomain)
+    ]);
+
+    const moData = allMoNodes.map((n: any) => ({ 
+        ...n, 
+        count: n.metaobjectsCount, 
+        fieldsCount: n.fieldDefinitions.length, 
+        fieldDefinitions: n.fieldDefinitions.map((f: any) => ({ ...f, typeDisplay: translateType(f.type?.name) })), 
+        fullKey: n.type, 
+        code_usage: 'Non' as string 
+    }));
+
+    // Review status avec index optimisé
+    let reviewStatusMap: Record<string, "to_review" | "reviewed"> = {};
     try {
-        const resources = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'CUSTOMER', 'ORDER', 'DRAFTORDER', 'COMPANY', 'LOCATION', 'MARKET', 'PAGE', 'BLOG', 'ARTICLE', 'SHOP'];
-        const results = await Promise.all(resources.map(async (ot) => {
-            let count = 0;
-            let hasNextPage = true;
-            let cursor: string | null = null;
-            while (hasNextPage) {
-                const r = await admin.graphql(`query getMetafieldDefinitionsCount($cursor: String, $ownerType: MetafieldOwnerType!) { metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor, ownerType: ot } });
-                const j = await r.json();
-                const data = j.data?.metafieldDefinitions;
-                if (data?.nodes && Array.isArray(data.nodes)) {
-                    count += data.nodes.length;
-                }
-                hasNextPage = data?.pageInfo?.hasNextPage || false;
-                cursor = data?.pageInfo?.endCursor || null;
-                if (count >= 10000) break; // Safety limit
-            }
-            return count;
-        }));
-        mfCount = results.reduce((a, b) => a + b, 0);
-    } catch (e) {
-        console.error("Error counting metafields:", e);
-    }
-
-    // Templates Count
-    const themesRes = await admin.graphql(`{ themes(first: 1, roles: [MAIN]) { nodes { id } } }`);
-    const themesData = await themesRes.json();
-    const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split('/').pop();
-    let totalTemplates = 0;
-    if (activeThemeId) {
-        const { session } = await authenticate.admin(request);
-        const assetsRes = await fetch(`https://${shopDomain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`, {
-            headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
+        const reviewRows = await db.itemReviewStatus.findMany({
+            where: { shop: shopDomain, source: "mo" },
+            select: { itemId: true, status: true }
         });
-        const assetsJson = await assetsRes.json();
-        const managedTypes = ['product', 'collection', 'page', 'blog', 'article'];
-        totalTemplates = (assetsJson.assets || []).filter((a: any) => {
-            if (!a.key.startsWith('templates/') || !a.key.endsWith('.json')) return false;
-            const type = a.key.replace('templates/', '').split('.')[0];
-            return managedTypes.includes(type);
-        }).length;
+        reviewRows.forEach((r: { itemId: string; status: string }) => { reviewStatusMap[r.itemId] = r.status as "to_review" | "reviewed"; });
+    } catch {
+        // Table absente
     }
 
-    // Media Count - Count all files with pagination
-    let mediaCount = 0;
-    let hasNextFilePage = true;
-    let fileCursor: string | null = null;
-    while (hasNextFilePage) {
-        const filesRes = await admin.graphql(`query getFilesCount($cursor: String) { files(first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor: fileCursor } });
-        const filesJson: any = await filesRes.json();
-        const data: any = filesJson.data?.files;
-        if (data?.nodes && Array.isArray(data.nodes)) {
-            mediaCount += data.nodes.length;
-        }
-        hasNextFilePage = data?.pageInfo?.hasNextPage || false;
-        fileCursor = data?.pageInfo?.endCursor || null;
-        if (mediaCount >= 10000) break; // Safety limit
-    }
-
-    return { shopDomain, moData, mfCount, moCount: moData.length, totalTemplates, mediaCount };
+    return {
+        shopDomain,
+        moData,
+        mfCount,
+        moCount: moData.length,
+        totalTemplates,
+        mediaCount,
+        menuCount,
+        reviewStatusMap,
+    };
 };
 
 export const action = async ({ request }: any) => {
@@ -187,20 +169,97 @@ export const action = async ({ request }: any) => {
     if (actionType === "create_entry") {
         const type = formData.get("type") as string;
         const fieldsData = JSON.parse(formData.get("fields") as string);
+
+        const LOREM_SHORT = "Lorem ipsum dolor sit amet.";
+        const LOREM_2LINES = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\nSed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
+        const RICH_HTML = "<p>Lorem ipsum <strong>dolor sit amet</strong>, <em>consectetur adipiscing elit</em>. <a href=\"https://example.com\">Lien exemple</a>.</p><ul><li>Premier point</li><li>Deuxième point</li></ul><p>Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>";
+
+        const getFirstChoice = (f: any): string | null => {
+            const validations = f.validations as Array<{ name: string; value: string | string[] }> | undefined;
+            if (!validations?.length) return null;
+            const choicesVal = validations.find((v: any) => v.name === "choices");
+            if (!choicesVal?.value) return null;
+            const arr = typeof choicesVal.value === "string" ? (() => { try { return JSON.parse(choicesVal.value); } catch { return null; } })() : choicesVal.value;
+            return Array.isArray(arr) && arr.length > 0 ? String(arr[0]) : null;
+        };
+
+        const isTitleField = (f: any) => {
+            const k = (f.key || "").toLowerCase();
+            const n = (f.name || "").toLowerCase();
+            return k === "title" || k === "titre" || k === "name" || n.includes("titre") || n.includes("titre ");
+        };
+
+        const isEmailField = (f: any) => {
+            const k = (f.key || "").toLowerCase();
+            const n = (f.name || "").toLowerCase();
+            const s = k + " " + n;
+            return /email|mail|courriel|e-mail/.test(s) || k === "email" || k === "mail";
+        };
+
+        const isIdentificationField = (f: any) => {
+            const k = (f.key || "").toLowerCase();
+            const n = (f.name || "").toLowerCase();
+            const s = k + " " + n;
+            return /identification|identifiant|id_client|id_utilisateur|id_contact|numero_client|numéro_client/.test(s) || k === "identification" || k === "identifiant";
+        };
+
+        const isIdCodeField = (f: any) => {
+            const k = (f.key || "").toLowerCase();
+            const n = (f.name || "").toLowerCase();
+            if (isIdentificationField(f)) return false;
+            const s = k + " " + n;
+            return /^id$|^code$|^ref$|^sku$|^handle$|^slug$|^numero$|^numéro$|^reference$/.test(k) || /\b(id|code|ref|sku|handle|slug|numéro|numero)\b/.test(s);
+        };
+
+        const uniqueSuffix = () => "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+
         const fields = fieldsData.map((f: any) => {
-            let val = "Test";
-            const t = f.type.name;
-            if (t.includes("number_integer")) val = "10";
-            else if (t.includes("number_decimal")) val = "10.5";
-            else if (t.includes("boolean")) val = "true";
+            let val: string;
+            const t = (f.type?.name || "").toLowerCase();
+
+            if (t.includes("reference") && !t.includes("list.")) return null;
+
+            if (t === "single_line_text_field") {
+                const firstChoice = getFirstChoice(f);
+                if (firstChoice != null) val = firstChoice;
+                else if (isTitleField(f)) val = "Exemple titre";
+                else if (isEmailField(f)) val = "email.exemple@gmail.com";
+                else if (isIdentificationField(f)) val = "identification exemple-" + uniqueSuffix();
+                else if (isIdCodeField(f)) val = "1234";
+                else val = LOREM_SHORT;
+            } else if (t === "multi_line_text_field") {
+                val = LOREM_2LINES;
+            } else if (t === "rich_text_field") {
+                val = RICH_HTML;
+            } else if (t.includes("number_integer")) {
+                const numVal = isIdCodeField(f) ? "1234" : "42";
+                val = t.startsWith("list.") ? JSON.stringify([42, 100]) : numVal;
+            } else if (t.includes("number_decimal")) {
+                val = t.startsWith("list.") ? JSON.stringify([19.99, 5.5]) : "19.99";
+            } else if (t.includes("boolean")) val = "true";
             else if (t.includes("date_time")) val = new Date().toISOString();
-            else if (t.includes("date")) val = new Date().toISOString().split('T')[0];
+            else if (t.includes("date")) val = new Date().toISOString().split("T")[0];
             else if (t.includes("url")) val = "https://example.com";
+            else if (t.includes("email")) val = "email.exemple@gmail.com";
             else if (t.includes("json")) val = "{}";
             else if (t.includes("color")) val = "#4BB961";
             else if (t.includes("rating")) val = JSON.stringify({ value: 4, scale_min: 1, scale_max: 5 });
-            else if (t.includes("money")) val = JSON.stringify({ amount: "10.00", currency_code: "EUR" });
+            else if (t.includes("money")) val = JSON.stringify({ amount: "19.99", currency_code: "EUR" });
+            else if (t.includes("weight")) val = JSON.stringify({ value: 1, unit: "KILOGRAMS" });
+            else if (t.includes("dimension")) val = JSON.stringify({ value: 10, unit: "CENTIMETERS" });
+            else if (t.includes("volume")) val = JSON.stringify({ value: 1, unit: "LITERS" });
+            else if (t.includes("file_reference")) return null;
             else if (t.includes("reference")) return null;
+            else if (t.startsWith("list.single_line_text_field")) val = JSON.stringify(["Lorem ipsum", "Dolor sit amet"]);
+            else if (t.startsWith("list.multi_line_text_field")) val = JSON.stringify([LOREM_SHORT, LOREM_SHORT]);
+            else if (t.startsWith("list.rich_text_field")) val = JSON.stringify([RICH_HTML]);
+            else if (t.startsWith("list.boolean")) val = JSON.stringify(["true", "false"]);
+            else if (t.startsWith("list.date")) val = JSON.stringify([new Date().toISOString().split("T")[0]]);
+            else if (t.startsWith("list.url")) val = JSON.stringify(["https://example.com"]);
+            else if (t.startsWith("list.color")) val = JSON.stringify(["#4BB961", "#3B82F6"]);
+            else {
+                val = LOREM_SHORT;
+            }
             return { key: f.key, value: val };
         }).filter(Boolean);
         const res = await admin.graphql(`mutation CreateMO($mo: MetaobjectCreateInput!) { metaobjectCreate(metaobject: $mo) { metaobject { id handle displayName referencedBy(first: 1) { edges { node { __typename } } } fields { key value } } userErrors { message } } }`, { variables: { mo: { type, fields } } });
@@ -211,14 +270,56 @@ export const action = async ({ request }: any) => {
         mo.fields?.forEach((f: any) => { entry[f.key] = f.value || '-'; });
         return { ok: true, entry };
     }
+    if (actionType === "set_review_status") {
+        try {
+            const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
+            const shopJson = await shopRes.json();
+            const shop = shopJson.data?.shop?.myshopifyDomain;
+            if (!shop) return { ok: false, errors: [{ message: "Shop non trouvé" }] };
+            const ids = JSON.parse((formData.get("ids") as string) || "[]") as string[];
+            const status = (formData.get("status") as string) as "to_review" | "reviewed";
+            if (!ids.length || !status || !["to_review", "reviewed"].includes(status)) return { ok: false, errors: [{ message: "Paramètres invalides" }] };
+            for (const itemId of ids) {
+                await db.itemReviewStatus.upsert({
+                    where: { shop_itemId_source: { shop, itemId, source: "mo" } },
+                    create: { shop, itemId, status, source: "mo" },
+                    update: { status }
+                });
+            }
+            return { ok: true, action: "set_review_status" };
+        } catch (e) {
+            return { ok: false, errors: [{ message: "Base de données non prête. Lancez: npx prisma generate puis npx prisma db push" }] };
+        }
+    }
+    if (actionType === "clear_review_status") {
+        try {
+            const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
+            const shopJson = await shopRes.json();
+            const shop = shopJson.data?.shop?.myshopifyDomain;
+            if (!shop) return { ok: false, errors: [{ message: "Shop non trouvé" }] };
+            const ids = JSON.parse((formData.get("ids") as string) || "[]") as string[];
+            if (!ids.length) return { ok: false, errors: [{ message: "Aucun id" }] };
+            await db.itemReviewStatus.deleteMany({ where: { shop, itemId: { in: ids }, source: "mo" } });
+            return { ok: true, action: "clear_review_status" };
+        } catch (e) {
+            return { ok: false, errors: [{ message: "Base de données non prête. Lancez: npx prisma generate puis npx prisma db push" }] };
+        }
+    }
     return null;
 };
 
 export default function AppMo() {
-    const { shopDomain, moData, mfCount, moCount, totalTemplates, mediaCount } = useLoaderData<any>();
+    const { shopDomain, moData, mfCount, moCount, totalTemplates, mediaCount, menuCount, reviewStatusMap } = useLoaderData<any>();
+    const location = useLocation();
+    const navigation = useNavigation();
+    const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[] } | null>();
     const submit = useSubmit();
     const fetcher = useFetcher();
     const revalidator = useRevalidator();
+    
+    // Utiliser le contexte de scan global
+    const { isScanning, moResults, startScan } = useScan();
+    
     const [devMode, setDevMode] = useState(false);
     const [search, setSearch] = useState("");
     const [modalData, setModalData] = useState<any>(null);
@@ -249,9 +350,21 @@ export default function AppMo() {
     const [sortConfig, setSortConfig] = useState<{ column: string | null; direction: 'asc' | 'desc' }>({ column: null, direction: 'asc' });
 
     useEffect(() => { setDevMode(localStorage.getItem('mm_dev_mode') === 'true'); }, []);
+
+    useEffect(() => {
+        if (!actionData?.ok || !actionData?.action) return;
+        if (actionData.action === "set_review_status" || actionData.action === "clear_review_status") {
+            setSelectedKeys(new Set([]));
+            setToast({ title: "Statut mis à jour", message: "Les lignes ont été marquées." });
+            setTimeout(() => setToast(null), 3000);
+            revalidator.revalidate();
+        }
+    }, [actionData, revalidator]);
     const toggleDev = (val: boolean) => { setDevMode(val); localStorage.setItem('mm_dev_mode', val ? 'true' : 'false'); };
-    const getShopifyUrl = (type: string) => `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/settings/custom_data/metaobjects/${type}`;
-    const getEntryUrl = (type: string, id: string) => `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/content/metaobjects/entries/${type}/${id.split('/').pop()}`;
+    const storeSlug = shopDomain.replace('.myshopify.com', '');
+    const getShopifyUrl = (type: string) => `https://admin.shopify.com/store/${storeSlug}/settings/custom_data/metaobjects/${type}`;
+    const getEntryUrl = (type: string, id: string) => `https://admin.shopify.com/store/${storeSlug}/content/metaobjects/entries/${type}/${id.split('/').pop()}`;
+    const newMoUrl = `https://admin.shopify.com/store/${storeSlug}/settings/custom_data/metaobjects/create`;
     const norm = (s: string) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
     useEffect(() => { 
@@ -372,7 +485,7 @@ export default function AppMo() {
             className: "mf-col--name" 
         },
         ...(devMode ? [
-            { key: "fullKey", label: (<div className="relative overflow-visible"><div className="mf-dev-badge"><span>&lt;/&gt;</span> Dev Mode</div>CLÉ TECH</div>), className: "mf-col--key mf-table__header--dev" },
+            { key: "fullKey", label: (<div className="relative overflow-visible"><div className="mf-dev-badge"><span>&lt;/&gt;</span> Dev Mode <a href={newMoUrl} target="_blank" rel="noopener noreferrer" className="mf-dev-badge__new" onClick={(e: React.MouseEvent) => e.stopPropagation()}>+ Nouveau</a></div>CLÉ TECH</div>), className: "mf-col--key mf-table__header--dev" },
             { key: "fields", label: "CHAMPS", className: "mf-col--type mf-table__header--dev" },
             { key: "code_usage", label: "CODE", className: "mf-col--code mf-table__header--dev" },
             { key: "count", label: "ENTRÉES", className: "mf-col--count mf-table__header--dev" }
@@ -388,7 +501,10 @@ export default function AppMo() {
             case "name": return (<div className="mf-cell mf-cell--multi"><span className="mf-text--title">{item.name}</span>{item.description && <span className="mf-text--desc">{item.description}</span>}</div>);
             case "fullKey": return (<div className="mf-cell mf-cell--key"><span className="mf-text--key">{item.type}</span></div>);
             case "fields": return (<div className="mf-cell mf-cell--type"><div className="mf-chip cursor-pointer hover:bg-[#E4E4E7] transition-colors" onClick={() => { setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); }} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); } }}>{item.fieldsCount} Champs</div></div>);
-            case "code_usage": return (<div className="mf-cell mf-cell--center mf-cell--badge"><span className="mf-badge--code">Non</span></div>);
+            case "code_usage": {
+                const inCode = moResults.size > 0 ? moResults.has(item.type) : (item.code_usage === 'Oui');
+                return (<div className="mf-cell mf-cell--center mf-cell--badge"><span className={`mf-badge--code ${inCode ? 'mf-badge--found' : ''}`}>{inCode ? 'Oui' : 'Non'}</span></div>);
+            }
             case "count": return (<div className="mf-cell mf-cell--center"><button onClick={() => handleOpenEntries(item)} className="mf-badge--count hover:bg-[#E4E4E7] transition-colors cursor-pointer">{item.count}</button></div>);
             case "actions": return (<div className="mf-cell mf-cell--center"><Tooltip content="Ouvrir"><a href={getShopifyUrl(item.type)} target="_blank" rel="noopener noreferrer" className="mf-action-link"><Icons.Link /></a></Tooltip></div>);
             case "menu": return (<div className="mf-cell mf-cell--center"><Dropdown classNames={{ content: "mf-dropdown-content" }}><DropdownTrigger><Button isIconOnly variant="light" size="sm" className="min-w-unit-8 w-8 h-8"><Icons.VerticalDots /></Button></DropdownTrigger><DropdownMenu aria-label="Actions" onAction={(k) => { if (k === 'edit') { setEditName(item.name); setEditDesc(item.description || ""); setModalData(item); } else if (k === 'struct') { setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); } else if (k === 'entries') handleOpenEntries(item); else if (k === 'delete') { setPendingDeleteIds([item.id]); setDeleteConfirmOpen(true); } }}><DropdownItem key="edit" startContent={<Icons.Edit size={16} />} className="mf-dropdown-item"><span className="mf-dropdown-item__title">Editer</span></DropdownItem><DropdownItem key="struct" startContent={<Icons.Layout size={16} />} className="mf-dropdown-item"><span className="mf-dropdown-item__title">Gérer champs</span></DropdownItem><DropdownItem key="entries" startContent={<Icons.Database size={16} />} className="mf-dropdown-item"><span className="mf-dropdown-item__title">Gérer entrées</span></DropdownItem><DropdownItem key="delete" startContent={<Icons.Delete size={16} />} className="mf-dropdown-item mf-dropdown-item--delete"><span className="mf-dropdown-item__title">supprimer</span></DropdownItem></DropdownMenu></Dropdown></div>);
@@ -407,21 +523,22 @@ export default function AppMo() {
     }, [search, moData]);
 
     return (
-        <div className="min-h-screen bg-white animate-in fade-in duration-500">
+        <>
+            <div className="min-h-screen bg-white animate-in fade-in duration-500">
             <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
                 <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]"><AppBrand /><div className="flex gap-3 items-center"><DevModeToggle isChecked={devMode} onChange={toggleDev} /><BasilicButton 
                     variant="flat" 
                     className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
-                    isLoading={revalidator.state === "loading"}
+                    isLoading={isScanning}
                     onPress={() => { 
                         setSelectedKeys(new Set()); 
-                        revalidator.revalidate(); 
+                        startScan();
                     }} 
-                    icon={revalidator.state === "loading" ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
+                    icon={isScanning ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
                 >
                     Scan Code
                 </BasilicButton><BasilicButton onPress={checkAutoGenerate} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>}>Générer descriptions manquantes</BasilicButton></div></div>
-                <div className="flex items-center justify-between w-full"><NavigationTabs activePath="/app/mo" counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount }} /><div style={{ width: '320px' }}><BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" /></div></div>
+                <div className="flex items-center justify-between w-full"><NavigationTabs activePath="/app/mo" counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount, menu: menuCount }} /><div style={{ width: '320px' }}><BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" /></div></div>
                 {search && filteredData.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 bg-[#F4F4F5]/50 rounded-[32px] border-2 border-dashed border-[#E4E4E7] animate-in fade-in zoom-in-95 duration-500">
                         <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-sm mb-4">
@@ -433,10 +550,30 @@ export default function AppMo() {
                 ) : (
                     <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className={`mf-section__header ${isTableOpen ? 'mf-section__header--open' : ''}`} onClick={() => setIsTableOpen(!isTableOpen)}><div className="mf-section__title-group"><Icons.Products className="mf-section__icon" /><span className="mf-section__title">{search ? 'Résultats de recherche' : 'Tous les Objets Méta'}</span><span className="mf-section__count">{filteredData.length}</span></div><div className="mf-section__arrow"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform duration-200 ${isTableOpen ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6"/></svg></div></div>
-                        {isTableOpen && (<div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label="Table des objets" removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ wrapper: "mf-table__wrapper", th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(column: any) => (<TableColumn key={column.key} align={column.key === "count" || column.key === "actions" || column.key === "menu" ? "center" : "start"} className={column.className}>{column.label}</TableColumn>)}</TableHeader><TableBody items={sortData(filteredData)} emptyContent={<div className="mf-empty">Aucun objet trouvé.</div>}>{(item: any) => (<TableRow key={item.id}>{(columnKey) => <TableCell>{renderCell(item, columnKey as string)}</TableCell>}</TableRow>)}</TableBody></Table></div>)}
+                        {isTableOpen && (<div className="mf-table__base animate-in fade-in zoom-in-95 duration-300"><Table aria-label="Table des objets" removeWrapper selectionMode="multiple" selectionBehavior={"checkbox" as any} onRowAction={() => {}} selectedKeys={selectedKeys} onSelectionChange={setSelectedKeys as any} className="mf-table" classNames={{ wrapper: "mf-table__wrapper", th: `mf-table__header ${devMode ? 'mf-table__header--dev' : ''}`, td: "mf-table__cell", tr: "mf-table__row" }}><TableHeader columns={columns}>{(column: any) => (<TableColumn key={column.key} align={column.key === "count" || column.key === "actions" || column.key === "menu" ? "center" : "start"} className={column.className}>{column.label}</TableColumn>)}</TableHeader><TableBody items={sortData(filteredData)} emptyContent={<div className="mf-empty">Aucun objet trouvé.</div>}>{(item: any) => (<TableRow key={item.id} className={reviewStatusMap?.[item.id] === "to_review" ? "mf-table__row--to-review" : reviewStatusMap?.[item.id] === "reviewed" ? "mf-table__row--reviewed" : undefined}>{(columnKey) => <TableCell>{renderCell(item, columnKey as string)}</TableCell>}</TableRow>)}</TableBody></Table></div>)}
                     </div>
                 )}
             </div>
+
+            {selectedKeys.size > 0 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10">
+                        <div className="flex items-center gap-3">
+                            <span className="text-[14px] font-medium text-white">{selectedKeys.size} sélectionnés</span>
+                            <button onClick={() => setSelectedKeys(new Set([]))} className="text-[#A1A1AA] hover:text-white transition-colors" aria-label="Tout désélectionner">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><g opacity="0.8"><path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/><path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></g></svg>
+                            </button>
+                        </div>
+                        <div className="h-6 w-[1px] bg-[#3F3F46]"></div>
+                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); fd.append("status", "to_review"); submit(fd, { method: "post" }); }} className="bg-[#71717A] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#52525B] transition-colors gap-2">À review</Button>
+                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); fd.append("status", "reviewed"); submit(fd, { method: "post" }); }} className="bg-[#3F3F46] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#27272A] transition-colors gap-2">Review</Button>
+                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "clear_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); submit(fd, { method: "post" }); }} variant="flat" className="text-[#A1A1AA] font-medium px-4 h-[36px] rounded-full hover:bg-white/10 hover:text-white transition-colors">Réinitialiser</Button>
+                        <div className="h-6 w-[1px] bg-[#3F3F46]"></div>
+                        <Button onPress={() => { setPendingDeleteIds(Array.from(selectedKeys).map(k => String(k))); setDeleteConfirmOpen(true); }} className="bg-[#F43F5E] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#E11D48] transition-colors gap-2" startContent={<Icons.Delete />}>supprimer</Button>
+                    </div>
+                </div>
+            )}
+
             {/* MODALE : ÉDITION DE L'OBJET (Titre / Description) */}
             <BasilicModal 
                 isOpen={!!modalData} 
@@ -797,5 +934,6 @@ export default function AppMo() {
             {/* TOAST NOTIFICATION */}
             {toast && (<div className="mf-toast"><div className="mf-toast--info-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 16V12M12 8H12.01M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z"/></svg></div><div className="mf-toast__content"><span className="mf-toast__title">{toast.title}</span><span className="mf-toast__message">{toast.message}</span></div><div className="mf-toast__close" onClick={() => setToast(null)} role="button" aria-label="Fermer" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setToast(null); }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg></div></div>)}
         </div>
+        </>
     );
 }

@@ -16,7 +16,7 @@ const shopify = shopifyApp({
   // On force la version exacte pour qu'elle corresponde à l'import ci-dessus
   apiVersion: "2024-10" as ApiVersion,
   
-  scopes: process.env.SCOPES?.split(","),
+  scopes: process.env.SCOPES?.split(",").map((s) => s.trim()).filter(Boolean) ?? undefined,
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new MemorySessionStorage(),

@@ -9,6 +9,7 @@ import frTranslations from "@shopify/polaris/locales/fr.json";
 import { HeroUIProvider } from "@heroui/react";
 import tailwindStyles from "../tailwind.css?url";
 import uiKitStyles from "../styles/ui-kit.css?url";
+import { ScanProvider } from "../components/ScanProvider";
 
 export const links = () => [
   { rel: "stylesheet", href: polarisStyles },
@@ -29,16 +30,19 @@ export default function App() {
     <ShopifyAppProvider embedded={true} apiKey={apiKey}>
       <PolarisAppProvider i18n={frTranslations}>
         <HeroUIProvider navigate={navigate} useHref={useHref}>
-          <div className="dark:bg-background">
-            <NavMenu>
-              <Link to="/app" rel="home">Accueil</Link>
-              <Link to="/app/mf">Champs Méta (MF)</Link>
-              <Link to="/app/mo">Objets Méta (MO)</Link>
-              <Link to="/app/templates">Templates</Link>
-              <Link to="/app/media">Médias</Link>
-            </NavMenu>
-            <Outlet />
-          </div>
+          <ScanProvider>
+            <div className="dark:bg-background">
+              <NavMenu>
+                <Link to="/app" rel="home">Accueil</Link>
+                <Link to="/app/mf">Champs Méta (MF)</Link>
+                <Link to="/app/mo">Objets Méta (MO)</Link>
+                <Link to="/app/templates">Templates</Link>
+                <Link to="/app/menu">Menus</Link>
+                {/* <Link to="/app/media">Médias</Link> — masqué pour l'instant */}
+              </NavMenu>
+              <Outlet />
+            </div>
+          </ScanProvider>
         </HeroUIProvider>
       </PolarisAppProvider>
     </ShopifyAppProvider>
