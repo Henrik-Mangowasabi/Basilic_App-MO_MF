@@ -75,12 +75,12 @@ export const loader = async ({ request }: { request: Request }) => {
 
                             mfKeys.forEach((fullKey) => {
                                 if (mfInCode.has(fullKey)) return;
-                                if (content.includes(`metafields.${fullKey}`)) {
-                                    mfInCode.add(fullKey);
-                                    return;
-                                }
                                 const [ns, key] = fullKey.split('.');
-                                if (content.includes(`metafields['${ns}']['${key}']`) || content.includes(`metafields["${ns}"]["${key}"]`)) {
+                                // Recherche ultra-large : namespace.key, clé entre guillemets, ou après un point
+                                if (content.includes(fullKey) || 
+                                    content.includes(`"${key}"`) || 
+                                    content.includes(`'${key}'`) || 
+                                    content.includes(`.${key}`)) {
                                     mfInCode.add(fullKey);
                                 }
                             });

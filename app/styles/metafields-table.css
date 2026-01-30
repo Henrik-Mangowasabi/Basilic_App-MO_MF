@@ -401,10 +401,9 @@ tr[role="rowgroup"]::after {
     width: 100% !important;
 }
 
-/* --- BLOCK SELECTION BY ROW CLICK --- */
-/* On bloque les clics sur toutes les cellules SAUF la première (checkbox) */
+/* On autorise les clics et la sélection sur toutes les cellules */
 .mf-table .mf-table__row td:not(:first-child) {
-    pointer-events: none !important;
+    pointer-events: auto !important;
 }
 
 /* On réactive les clics uniquement pour les éléments interactifs à l'intérieur des cellules */

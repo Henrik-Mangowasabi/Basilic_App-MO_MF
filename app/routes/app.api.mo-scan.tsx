@@ -12,7 +12,7 @@ export const loader = async ({ request }: { request: Request }) => {
     const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split("/").pop();
     if (!activeThemeId) return new Response(JSON.stringify({ error: "Thème actif non trouvé" }), { status: 400 });
 
-    let moTypes: string[] = [];
+    const moTypes: string[] = [];
     let moCursor: string | null = null;
     try {
         for (;;) {
@@ -67,10 +67,12 @@ export const loader = async ({ request }: { request: Request }) => {
 
                             moTypes.forEach(type => {
                                 if (metaobjectsInCode.has(type)) return;
-                                // Recherche de metaobjects.type
-                                if (content.includes(`metaobjects.${type}`) || 
-                                    content.includes(`metaobjects['${type}']`) || 
-                                    content.includes(`metaobjects["${type}"]`)) {
+                                // Recherche ultra-large : guillemets, après un point, ou entre crochets
+                                if (content.includes(`"${type}"`) || 
+                                    content.includes(`'${type}'`) || 
+                                    content.includes(`.${type}`) ||
+                                    content.includes(`['${type}']`) ||
+                                    content.includes(`["${type}"]`)) {
                                     metaobjectsInCode.add(type);
                                 }
                             });

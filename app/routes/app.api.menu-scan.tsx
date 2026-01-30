@@ -64,8 +64,8 @@ export const loader = async ({ request }: { request: Request }) => {
                             if (!content) return;
 
                             menuHandles.forEach((handle) => {
-                                // Recherche précise de "handle" avec guillemets
-                                if (content.includes(`"${handle}"`) || content.includes(`'${handle}'`)) {
+                                // Recherche large : guillemets ou après un point
+                                if (content.includes(`"${handle}"`) || content.includes(`'${handle}'`) || content.includes(`.${handle}`)) {
                                     menusInCode.add(handle);
                                 }
                             });

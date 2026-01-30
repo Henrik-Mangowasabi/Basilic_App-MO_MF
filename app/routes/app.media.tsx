@@ -3,26 +3,9 @@ import { useLoaderData, useRevalidator, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import "../styles/metafields-table.css";
 import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton, BasilicModal } from "../components/BasilicUI";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Pagination } from "@heroui/react";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Pagination } from "@heroui/react";
 
-interface MediaItem {
-    id: string;
-    alt: string;
-    createdAt: string;
-    fileSize: number;
-    mimeType: string;
-    originalSource: {
-        url: string;
-    };
-    preview?: {
-        image?: {
-            url: string;
-        }
-    };
-    filename: string;
-    referencesCount: number;
-    type: 'IMAGE' | 'VIDEO' | 'FILE';
-}
+
 
 const Icons = {
     Link: (props: any) => (<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>),
@@ -436,7 +419,7 @@ export default function AppMedia() {
                 </div>
 
                 <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="mf-section__header mf-section__header--open cursor-default" style={{ pointerEvents: 'none' }}>
+                    <div className="mf-section__header mf-section__header--open">
                         <div className="mf-section__title-group">
                             <Icons.Image className="text-[#4BB961]" />
                             <span className="mf-section__title">{search ? 'Résultats de recherche' : 'Tous les Fichiers'}</span>
@@ -521,8 +504,9 @@ export default function AppMedia() {
                         </div>
                     </div>
                     <div>
-                        <label className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Texte Alternatif (Alt)</label>
+                        <label htmlFor="media-alt" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Texte Alternatif (Alt)</label>
                         <textarea 
+                            id="media-alt"
                             value={editAlt} 
                             onChange={e => setEditAlt(e.target.value)} 
                             className="w-full h-24 p-3 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] resize-none" 
