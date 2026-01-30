@@ -15,7 +15,7 @@ export const loader = async ({ request }: { request: Request }) => {
     const mfKeys: string[] = [];
     const ownerTypes = ["PRODUCT", "PRODUCTVARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
     
-    await Promise.all(ownerTypes.map(async (ownerType) => {
+    for (const ownerType of ownerTypes) {
         let cursor: string | null = null;
         try {
             for (;;) {
@@ -39,7 +39,7 @@ export const loader = async ({ request }: { request: Request }) => {
                 cursor = data.pageInfo.endCursor;
             }
         } catch (e) {}
-    }));
+    }
 
     const assetsRes = await fetch(
         `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
@@ -76,19 +76,15 @@ export const loader = async ({ request }: { request: Request }) => {
                             mfKeys.forEach((fullKey) => {
                                 if (mfInCode.has(fullKey)) return;
                                 const parts = fullKey.split('.');
-                                const ns = parts[0];
-                                const key = parts.slice(1).join('.');
+                                const key = parts[parts.length - 1];
                                 
-                                // Recherche multi-notation :
-                                // 1. namespace.key ou "namespace.key" (Dot notation / JSON)
-                                // 2. metafields['namespace']['key'] (Bracket notation)
-                                // 3. ["key"] ou "key" (Clé seule)
+                                // Recherche identique aux MO (marche pour custom.mm_logo_pharma)
                                 if (content.includes(fullKey) || 
-                                    content.includes(`['${ns}']['${key}']`) || 
-                                    content.includes(`["${ns}"]["${key}"]`) || 
+                                    content.includes(`"${key}"`) || 
                                     content.includes(`'${key}'`) || 
-                                    content.includes(`"${key}"`) ||
-                                    content.includes(`.${key}`)) {
+                                    content.includes(`.${key}`) ||
+                                    content.includes(`['${key}']`) ||
+                                    content.includes(`["${key}"]`)) {
                                     mfInCode.add(fullKey);
                                 }
                             });

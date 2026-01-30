@@ -99,6 +99,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
 
             sessionStorage.setItem(SCAN_DONE_KEY, "true");
             setHasScanRun(true);
+            window.location.reload();
         } catch (e) {
             if ((e as Error).name !== "AbortError") console.error("Scan failed", e);
         } finally {
