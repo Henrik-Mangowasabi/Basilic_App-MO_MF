@@ -13,9 +13,9 @@ export const loader = async ({ request }: { request: Request }) => {
     if (!activeThemeId) return new Response(JSON.stringify({ error: "Thème actif non trouvé" }), { status: 400 });
 
     const mfKeys: string[] = [];
-    const ownerTypes = ["PRODUCT", "VARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
+    const ownerTypes = ["PRODUCT", "PRODUCTVARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
     
-    for (const ownerType of ownerTypes) {
+    await Promise.all(ownerTypes.map(async (ownerType) => {
         let cursor: string | null = null;
         try {
             for (;;) {
@@ -39,7 +39,7 @@ export const loader = async ({ request }: { request: Request }) => {
                 cursor = data.pageInfo.endCursor;
             }
         } catch (e) {}
-    }
+    }));
 
     const assetsRes = await fetch(
         `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
@@ -53,7 +53,7 @@ export const loader = async ({ request }: { request: Request }) => {
     );
 
     const encoder = new TextEncoder();
-    const sse = (data: object) => "data: " + JSON.stringify(data) + "\n\n";
+    const sse = (data: any) => `data: ${JSON.stringify(data)}\n\n`;
     const mfInCode = new Set<string>();
 
     const stream = new ReadableStream({
@@ -75,11 +75,19 @@ export const loader = async ({ request }: { request: Request }) => {
 
                             mfKeys.forEach((fullKey) => {
                                 if (mfInCode.has(fullKey)) return;
-                                const [ns, key] = fullKey.split('.');
-                                // Recherche ultra-large : namespace.key, clé entre guillemets, ou après un point
+                                const parts = fullKey.split('.');
+                                const ns = parts[0];
+                                const key = parts.slice(1).join('.');
+                                
+                                // Recherche multi-notation :
+                                // 1. namespace.key ou "namespace.key" (Dot notation / JSON)
+                                // 2. metafields['namespace']['key'] (Bracket notation)
+                                // 3. ["key"] ou "key" (Clé seule)
                                 if (content.includes(fullKey) || 
-                                    content.includes(`"${key}"`) || 
+                                    content.includes(`['${ns}']['${key}']`) || 
+                                    content.includes(`["${ns}"]["${key}"]`) || 
                                     content.includes(`'${key}'`) || 
+                                    content.includes(`"${key}"`) ||
                                     content.includes(`.${key}`)) {
                                     mfInCode.add(fullKey);
                                 }
