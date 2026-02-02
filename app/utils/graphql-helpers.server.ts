@@ -226,3 +226,83 @@ export async function getActiveThemeId(admin: AdminGraphQL): Promise<string | nu
     const json = await res.json();
     return json.data?.themes?.nodes?.[0]?.id?.split('/').pop() || null;
 }
+
+/**
+ * Compte les sections (fichiers sections/*.liquid) avec cache
+ * Nécessite l'accès REST aux assets du thème
+ */
+export async function getSectionsCount(admin: AdminGraphQL, shop: string, accessToken: string, useCache = true): Promise<number> {
+    try {
+        if (useCache) {
+            const cached = await getFromCache(shop, 'sectionsCount');
+            if (cached !== null) return cached;
+        }
+
+        // Récupérer le thème actif
+        const themeId = await getActiveThemeId(admin);
+        if (!themeId) return 0;
+
+        // Récupérer les assets via REST API
+        const assetsRes = await fetch(`https://${shop}/admin/api/2024-10/themes/${themeId}/assets.json`, {
+            headers: { "X-Shopify-Access-Token": accessToken, "Content-Type": "application/json" }
+        });
+
+        if (!assetsRes.ok) return 0;
+
+        const assetsJson = await assetsRes.json();
+        const assets = assetsJson.assets || [];
+
+        // Compter les fichiers sections/*.liquid
+        const sectionsCount = assets.filter((a: { key: string }) =>
+            a.key.startsWith('sections/') && a.key.endsWith('.liquid')
+        ).length;
+
+        if (useCache) {
+            await setInCache(shop, 'sectionsCount', sectionsCount);
+        }
+
+        return sectionsCount;
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * Compte les templates (fichiers templates/*.json) avec cache
+ * Nécessite l'accès REST aux assets du thème
+ */
+export async function getTemplatesCount(admin: AdminGraphQL, shop: string, accessToken: string, useCache = true): Promise<number> {
+    try {
+        if (useCache) {
+            const cached = await getFromCache(shop, 'templatesCount');
+            if (cached !== null) return cached;
+        }
+
+        // Récupérer le thème actif
+        const themeId = await getActiveThemeId(admin);
+        if (!themeId) return 0;
+
+        // Récupérer les assets via REST API
+        const assetsRes = await fetch(`https://${shop}/admin/api/2024-10/themes/${themeId}/assets.json`, {
+            headers: { "X-Shopify-Access-Token": accessToken, "Content-Type": "application/json" }
+        });
+
+        if (!assetsRes.ok) return 0;
+
+        const assetsJson = await assetsRes.json();
+        const assets = assetsJson.assets || [];
+
+        // Compter les fichiers templates/*.json
+        const templatesCount = assets.filter((a: { key: string }) =>
+            a.key.startsWith('templates/') && a.key.endsWith('.json')
+        ).length;
+
+        if (useCache) {
+            await setInCache(shop, 'templatesCount', templatesCount);
+        }
+
+        return templatesCount;
+    } catch {
+        return 0;
+    }
+}

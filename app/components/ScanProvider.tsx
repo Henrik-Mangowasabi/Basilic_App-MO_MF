@@ -125,16 +125,16 @@ export function ScanProvider({ children }: ScanProviderProps) {
         <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, templateResults, menuResults, startScan, hasScanRun }}>
             {children}
             {isScanning && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white rounded-[24px] p-8 shadow-2xl flex flex-col items-center gap-4 min-w-[340px]">
-                        <div className="w-14 h-14 border-4 border-[#4BB961]/20 border-t-[#4BB961] rounded-full animate-spin" />
-                        <div className="text-center w-full">
-                            <div className="text-[17px] font-semibold text-[#18181B] mb-1">Analyse du code...</div>
-                            <div className="text-[13px] text-[#71717A] mb-4">Recherche des éléments dans vos fichiers Liquid et JSON</div>
-                            <div className="w-full h-2 bg-[#E4E4E7] rounded-full overflow-hidden mb-2">
-                                <div className="h-full bg-[#4BB961] transition-all duration-300 ease-out" style={{ width: `${scanProgress}%` }} />
+                <div className="loading-overlay">
+                    <div className="scan-modal">
+                        <div className="scan-modal__spinner" />
+                        <div className="scan-modal__content">
+                            <div className="scan-modal__title">Analyse du code...</div>
+                            <div className="scan-modal__subtitle">Recherche des éléments dans vos fichiers Liquid et JSON</div>
+                            <div className="scan-modal__progress">
+                                <div className="scan-modal__progress-bar" style={{ width: `${scanProgress}%` }} />
                             </div>
-                            <div className="text-[12px] font-bold text-[#4BB961]">{scanProgress}%</div>
+                            <div className="scan-modal__percent">{scanProgress}%</div>
                         </div>
                     </div>
                 </div>

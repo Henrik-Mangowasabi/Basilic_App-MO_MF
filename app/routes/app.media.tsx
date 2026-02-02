@@ -2,8 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useLoaderData, useRevalidator, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import "../styles/metafields-table.css";
-import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton, BasilicModal } from "../components/BasilicUI";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Pagination } from "@heroui/react";
+import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton, BasilicModal, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Pagination } from "../components/BasilicUI";
 
 
 
@@ -38,7 +37,7 @@ export const loader = async ({ request }: any) => {
     let reachedLimit = false;
 
     while (hasNextFilePage) {
-        const filesRes = await admin.graphql(`
+        const filesRes: Response = await admin.graphql(`
             query getFiles($cursor: String) {
                 files(first: 250, after: $cursor) {
                     pageInfo { hasNextPage endCursor }
@@ -58,7 +57,7 @@ export const loader = async ({ request }: any) => {
                             preview { image { url } }
                         }
                         ... on Video {
-                            originalSource { 
+                            originalSource {
                                 url
                                 fileSize
                                 mimeType
@@ -69,8 +68,8 @@ export const loader = async ({ request }: any) => {
                 }
             }
         `, { variables: { cursor: fileCursor } });
-        const filesJson = await filesRes.json();
-        const data = filesJson.data?.files;
+        const filesJson: { data?: { files?: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: unknown[] } }; errors?: unknown[] } = await filesRes.json();
+        const data: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: unknown[] } | undefined = filesJson.data?.files;
         if (data?.nodes && Array.isArray(data.nodes)) {
             allMediaNodes = [...allMediaNodes, ...data.nodes];
             totalMediaCount += data.nodes.length;
@@ -97,7 +96,7 @@ export const loader = async ({ request }: any) => {
     const productUsageMap: Record<string, number> = {};
 
     while (hasNextProductPage) {
-        const productMediaRes = await admin.graphql(`
+        const productMediaRes: Response = await admin.graphql(`
             query getProductMedia($cursor: String) {
                 products(first: 250, after: $cursor) {
                     pageInfo { hasNextPage endCursor }
@@ -111,9 +110,9 @@ export const loader = async ({ request }: any) => {
                 }
             }
         `, { variables: { cursor: productCursor } });
-        
-        const json = await productMediaRes.json();
-        const data = json.data?.products;
+
+        const json: { data?: { products?: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { media?: { nodes?: { id: string }[] } }[] } }; errors?: unknown[] } = await productMediaRes.json();
+        const data: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { media?: { nodes?: { id: string }[] } }[] } | undefined = json.data?.products;
         
         if (data?.nodes && Array.isArray(data.nodes)) {
             data.nodes.forEach((p: any) => {
@@ -209,9 +208,9 @@ export const loader = async ({ request }: any) => {
             let hasNextPage = true;
             let cursor: string | null = null;
             while (hasNextPage) {
-                const res = await admin.graphql(`query getMetafieldDefinitionsCount($cursor: String, $ownerType: MetafieldOwnerType!) { metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor, ownerType: r } });
-                const json = await res.json();
-                const data = json?.data?.metafieldDefinitions;
+                const res: Response = await admin.graphql(`query getMetafieldDefinitionsCount($cursor: String, $ownerType: MetafieldOwnerType!) { metafieldDefinitions(ownerType: $ownerType, first: 250, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id } } }`, { variables: { cursor, ownerType: r } });
+                const json: { data?: { metafieldDefinitions?: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { id: string }[] } } } = await res.json();
+                const data: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { id: string }[] } | undefined = json?.data?.metafieldDefinitions;
                 if (data?.nodes && Array.isArray(data.nodes)) {
                     count += data.nodes.length;
                 }
@@ -313,40 +312,40 @@ export default function AppMedia() {
     const renderCell = (item: any, key: React.Key) => {
         switch (key) {
             case "file": return (
-                <div className="mf-cell mf-cell--multi items-center flex-row gap-3">
-                    <div className="w-10 h-10 rounded-[8px] bg-default-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                <div className="mf-cell mf-cell--file">
+                    <div className="cell-thumbnail">
                         {item.type === 'IMAGE' ? (
-                            <img src={item.previewUrl} alt="" className="w-full h-full object-cover" />
+                            <img src={item.previewUrl} alt="" className="cell-thumbnail__image" />
                         ) : (
-                            <Icons.Video className="text-default-400" />
+                            <Icons.Video className="cell-thumbnail__icon" />
                         )}
                     </div>
-                    <div className="flex flex-col min-w-0">
-                        <span className="mf-text--title truncate font-medium">{item.filename}</span>
-                        <span className="mf-text--desc uppercase text-[10px] font-bold tracking-wider">{item.type}</span>
+                    <div className="cell-file-info">
+                        <span className="mf-text--title cell-file-info__name">{item.filename}</span>
+                        <span className="cell-file-info__type">{item.type}</span>
                     </div>
                 </div>
             );
             case "alt": return (
                 <div className="mf-cell">
-                    <span className={`text-[13px] ${item.alt ? 'text-[#18181B]' : 'text-[#A1A1AA] italic'}`}>
+                    <span className={`cell-alt ${item.alt ? 'cell-alt--filled' : 'cell-alt--empty'}`}>
                         {item.alt || "Aucun texte alternatif"}
                     </span>
                 </div>
             );
             case "date": return (
                 <div className="mf-cell">
-                    <span className="text-[13px] text-[#71717A]">{new Date(item.createdAt).toLocaleDateString('fr-FR')}</span>
+                    <span className="cell-date">{new Date(item.createdAt).toLocaleDateString('fr-FR')}</span>
                 </div>
             );
             case "size": return (
                 <div className="mf-cell">
-                    <span className="text-[13px] text-[#71717A]">{formatSize(item.fileSize)}</span>
+                    <span className="cell-size">{formatSize(item.fileSize)}</span>
                 </div>
             );
             case "refs": return (
                 <div className="mf-cell">
-                    <span className={`mf-badge--count ${item.referencesCount > 0 ? 'bg-[#4BB961]/10 text-[#4BB961]' : 'bg-default-100 text-default-400'}`}>
+                    <span className={`mf-badge--count ${item.referencesCount > 0 ? 'cell-count--success' : 'cell-count--neutral'}`}>
                         {item.referencesCount} référence{item.referencesCount > 1 ? 's' : ''}
                     </span>
                 </div>
@@ -355,9 +354,9 @@ export default function AppMedia() {
                 <div className="mf-cell">
                     <Dropdown classNames={{ content: "mf-dropdown-content" }}>
                         <DropdownTrigger>
-                            <Button isIconOnly variant="light" size="sm" className="w-8 h-8"><Icons.VerticalDots /></Button>
+                            <Button isIconOnly variant="light" size="sm" className="cell-menu-btn"><Icons.VerticalDots /></Button>
                         </DropdownTrigger>
-                        <DropdownMenu aria-label="Actions" onAction={(k) => { 
+                        <DropdownMenu aria-label="Actions" onAction={(k) => {
                             if (k === 'edit') { setModalData(item); setEditAlt(item.alt); }
                             else if (k === 'delete') { setSelectedKeys(new Set([item.id])); setDeleteModalOpen(true); }
                         }}>
@@ -390,32 +389,32 @@ export default function AppMedia() {
     }, [search]);
 
     return (
-        <div className="min-h-screen bg-white animate-in fade-in duration-500">
-            <div className="mx-auto px-6 pt-6 pb-32 space-y-6" style={{ maxWidth: "1800px" }}>
-                <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]">
+        <div className="page">
+            <div className="page-content page-content--wide">
+                <div className="page-header">
                     <AppBrand />
-                    <div className="flex gap-3">
-                        <BasilicButton 
-                            variant="flat" 
-                            className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
+                    <div className="page-header__actions">
+                        <BasilicButton
+                            variant="flat"
+                            className="btn-secondary"
                             isLoading={revalidator.state === "loading"}
-                            onPress={() => revalidator.revalidate()} 
+                            onPress={() => revalidator.revalidate()}
                             icon={revalidator.state === "loading" ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
                         >
                             Sync Médias
                         </BasilicButton>
-                        <BasilicButton 
-                            icon={<Icons.Sparkles className="text-white" />}
-                            className="bg-[#4BB961] text-white"
+                        <BasilicButton
+                            icon={<Icons.Sparkles />}
+                            className="btn-primary"
                         >
                             Générer tous les Alt textes
                         </BasilicButton>
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between w-full">
+                <div className="page-nav-row">
                     <NavigationTabs activePath="/app/media" counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount }} />
-                    <div style={{ width: '320px' }}><BasilicSearch value={search} onValueChange={setSearch} placeholder="Rechercher un média..." /></div>
+                    <div className="search-container"><BasilicSearch value={search} onValueChange={setSearch} placeholder="Rechercher un média..." /></div>
                 </div>
 
                 <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -436,15 +435,15 @@ export default function AppMedia() {
                             className="mf-table mf-table--media" 
                             classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}
                         >
-                            <TableHeader columns={columns}>{(c) => <TableColumn key={c.key} align={c.key === "menu" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>}</TableHeader>
+                            <TableHeader>{columns.map((c) => <TableColumn key={c.key} align={c.key === "menu" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader>
                             <TableBody items={paginatedItems} emptyContent="Aucun fichier trouvé.">
-                                {(item: any) => (<TableRow key={item.id}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}
+                                {(item: any) => (<TableRow key={item.id} rowKey={item.id}>{columns.map((c) => <TableCell key={c.key}>{renderCell(item, c.key)}</TableCell>)}</TableRow>)}
                             </TableBody>
                         </Table>
                     </div>
                     {totalPages > 1 && (
-                        <div className="flex items-center justify-between px-4 py-4 border-t border-[#E4E4E7]">
-                            <div className="text-sm text-[#71717A]">
+                        <div className="pagination-bar">
+                            <div className="pagination-bar__info">
                                 Affichage de {(currentPage - 1) * ITEMS_PER_PAGE + 1} à {Math.min(currentPage * ITEMS_PER_PAGE, filteredItems.length)} sur {filteredItems.length} médias
                             </div>
                             <Pagination
@@ -453,9 +452,9 @@ export default function AppMedia() {
                                 onChange={setCurrentPage}
                                 showControls
                                 classNames={{
-                                    wrapper: "gap-0",
-                                    item: "w-8 h-8 text-sm rounded-lg bg-transparent",
-                                    cursor: "bg-[#4BB961] text-white font-semibold",
+                                    wrapper: "pagination-wrapper",
+                                    item: "pagination-item",
+                                    cursor: "pagination-cursor",
                                 }}
                             />
                         </div>
@@ -465,25 +464,25 @@ export default function AppMedia() {
 
             {/* SELECTION BAR */}
             {selectedKeys.size > 0 && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
-                    <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10">
-                        <div className="flex items-center gap-3">
-                            <span className="text-[14px] font-medium text-white">{selectedKeys === "all" ? paginatedItems.length : selectedKeys.size} sélectionnés</span>
-                            <button onClick={() => setSelectedKeys(new Set([]))} className="text-[#A1A1AA] hover:text-white transition-colors">
+                <div className="selection-bar-wrapper">
+                    <div className="selection-bar">
+                        <div className="selection-bar__info">
+                            <span className="selection-bar__count">{selectedKeys === "all" ? paginatedItems.length : selectedKeys.size} sélectionnés</span>
+                            <button onClick={() => setSelectedKeys(new Set([]))} className="selection-bar__clear">
                                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><g opacity="0.8"><path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/><path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></g></svg>
                             </button>
                         </div>
-                        <div className="h-6 w-[1px] bg-[#3F3F46]"></div>
-                        <div className="flex gap-2">
-                            <Button 
+                        <div className="selection-bar__divider"></div>
+                        <div className="selection-bar__actions">
+                            <Button
                                 onPress={() => setRenameModalOpen(true)}
-                                className="bg-white/10 text-white font-medium px-4 h-[36px] rounded-full hover:bg-white/20 transition-colors"
+                                className="selection-bar__btn"
                             >
                                 Renommer en groupe
                             </Button>
-                            <Button 
+                            <Button
                                 onPress={() => setDeleteModalOpen(true)}
-                                className="bg-[#F43F5E] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#E11D48] transition-colors gap-2" 
+                                className="selection-bar__btn selection-bar__btn--danger"
                                 startContent={<Icons.Delete />}
                             >
                                 Supprimer
@@ -494,42 +493,42 @@ export default function AppMedia() {
             )}
 
             {/* MODALS */}
-            <BasilicModal isOpen={!!modalData} onClose={() => setModalData(null)} title="Editer le média" footer={<><Button variant="light" onPress={() => setModalData(null)} className="grow bg-[#F4F4F5]">Annuler</Button><BasilicButton className="grow" onPress={() => { submit({ action: 'update_file', id: modalData.id, alt: editAlt }, { method: 'post' }); setModalData(null); }}>Enregistrer</BasilicButton></>}>
-                <div className="space-y-4 pt-2">
-                    <div className="flex items-center gap-3 p-3 bg-default-50 rounded-xl">
-                        <img src={modalData?.previewUrl} alt="" className="w-12 h-12 rounded-lg object-cover" />
-                        <div className="flex flex-col">
-                            <span className="text-sm font-semibold truncate max-w-[200px]">{modalData?.filename}</span>
-                            <span className="text-xs text-default-400">{modalData?.type} • {formatSize(modalData?.fileSize)}</span>
+            <BasilicModal isOpen={!!modalData} onClose={() => setModalData(null)} title="Editer le média" footer={<><Button variant="light" onPress={() => setModalData(null)} className="btn-modal-cancel">Annuler</Button><BasilicButton className="btn-modal-confirm" onPress={() => { submit({ action: 'update_file', id: modalData.id, alt: editAlt }, { method: 'post' }); setModalData(null); }}>Enregistrer</BasilicButton></>}>
+                <div className="modal-content">
+                    <div className="media-preview">
+                        <img src={modalData?.previewUrl} alt="" className="media-preview__image" />
+                        <div className="media-preview__info">
+                            <span className="media-preview__name">{modalData?.filename}</span>
+                            <span className="media-preview__meta">{modalData?.type} • {formatSize(modalData?.fileSize)}</span>
                         </div>
                     </div>
-                    <div>
-                        <label htmlFor="media-alt" className="text-[11px] font-bold text-[#71717A] uppercase tracking-wider mb-1.5 block">Texte Alternatif (Alt)</label>
-                        <textarea 
+                    <div className="form-group">
+                        <label htmlFor="media-alt" className="form-label">Texte Alternatif (Alt)</label>
+                        <textarea
                             id="media-alt"
-                            value={editAlt} 
-                            onChange={e => setEditAlt(e.target.value)} 
-                            className="w-full h-24 p-3 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] resize-none" 
+                            value={editAlt}
+                            onChange={e => setEditAlt(e.target.value)}
+                            className="form-textarea"
                             placeholder="Décrivez l'image..."
                         />
                     </div>
                 </div>
             </BasilicModal>
 
-            <BasilicModal isOpen={renameModalOpen} onClose={() => setRenameModalOpen(false)} title="Renommer en groupe" footer={<><Button variant="light" onPress={() => setRenameModalOpen(false)} className="grow bg-[#F4F4F5]">Annuler</Button><BasilicButton className="grow">Appliquer</BasilicButton></>}>
-                <div className="space-y-4 pt-2">
-                    <p className="text-sm text-[#71717A]">Ajoutez un préfixe à tous les fichiers sélectionnés (ex: image_produit_).</p>
-                    <input 
-                        value={renamePrefix} 
-                        onChange={e => setRenamePrefix(e.target.value)} 
-                        className="w-full h-11 px-4 bg-white border border-[#E4E4E7] rounded-[12px] focus:ring-2 focus:ring-[#4BB961]/20 focus:border-[#4BB961]/40 focus:outline-none transition-all text-[14px] font-semibold" 
+            <BasilicModal isOpen={renameModalOpen} onClose={() => setRenameModalOpen(false)} title="Renommer en groupe" footer={<><Button variant="light" onPress={() => setRenameModalOpen(false)} className="btn-modal-cancel">Annuler</Button><BasilicButton className="btn-modal-confirm">Appliquer</BasilicButton></>}>
+                <div className="modal-content">
+                    <p className="modal-description">Ajoutez un préfixe à tous les fichiers sélectionnés (ex: image_produit_).</p>
+                    <input
+                        value={renamePrefix}
+                        onChange={e => setRenamePrefix(e.target.value)}
+                        className="form-input"
                         placeholder="Préfixe..."
                     />
                 </div>
             </BasilicModal>
 
-            <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer suppression" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="grow bg-[#F4F4F5]">Annuler</Button><Button color="danger" onPress={() => { submit({ action: 'delete_files', ids: JSON.stringify(Array.from(selectedKeys)) }, { method: 'post' }); setSelectedKeys(new Set([])); setDeleteModalOpen(false); }} className="grow bg-[#F43F5E] text-white">Confirmer</Button></>}>
-                <p className="py-2 text-sm">Voulez-vous vraiment supprimer {selectedKeys === "all" ? paginatedItems.length : selectedKeys.size} fichier{selectedKeys.size > 1 ? 's' : ''} ? Cette action est irréversible.</p>
+            <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer suppression" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="btn-modal-cancel">Annuler</Button><Button color="danger" onPress={() => { submit({ action: 'delete_files', ids: JSON.stringify(Array.from(selectedKeys)) }, { method: 'post' }); setSelectedKeys(new Set([])); setDeleteModalOpen(false); }} className="btn-modal-danger">Confirmer</Button></>}>
+                <p className="modal-text">Voulez-vous vraiment supprimer {selectedKeys === "all" ? paginatedItems.length : selectedKeys.size} fichier{selectedKeys.size > 1 ? 's' : ''} ? Cette action est irréversible.</p>
             </BasilicModal>
         </div>
     );

@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Container, Header, AppBrand, DevModeToggle, BasilicCard, BasilicButton, BasilicSearch, NavigationTabs, BasilicDropdown, BasilicModal } from "../components/BasilicUI";
-import { CardBody, Divider } from "@heroui/react";
+import { Container, Header, AppBrand, DevModeToggle, BasilicCard, BasilicCardBody, BasilicButton, BasilicSearch, NavigationTabs, BasilicDropdown, BasilicModal, Divider } from "../components/BasilicUI";
 
 export default function UIKitPage() {
   const [isDev, setIsDev] = useState(false);
@@ -14,7 +13,7 @@ export default function UIKitPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
         {/* Branding Section */}
         <BasilicCard className="p-4">
-          <CardBody>
+          <BasilicCardBody>
             <h3 className="text-lg font-bold mb-4">Identification de l&apos;App</h3>
             <div className="flex flex-col gap-6">
               <div>
@@ -27,12 +26,12 @@ export default function UIKitPage() {
                 <AppBrand name="Basilic Pro" plan="premium" logoColor="#3b82f6" logoIcon={<span>★</span>} />
               </div>
             </div>
-          </CardBody>
+          </BasilicCardBody>
         </BasilicCard>
 
         {/* Logic Section */}
         <BasilicCard className="p-4">
-          <CardBody>
+          <BasilicCardBody>
             <h3 className="text-lg font-bold mb-4">Contrôles & Toggles</h3>
             <div className="flex flex-col gap-6">
               <div>
@@ -45,12 +44,12 @@ export default function UIKitPage() {
                 <DevModeToggle isChecked={isDev2} onChange={setIsDev2} />
               </div>
             </div>
-          </CardBody>
+          </BasilicCardBody>
         </BasilicCard>
 
         {/* Buttons Section */}
         <BasilicCard className="p-4 md:col-span-2">
-          <CardBody>
+          <BasilicCardBody>
             <h3 className="text-lg font-bold mb-4">Boutons & Actions</h3>
             <div className="flex flex-wrap gap-6 items-center">
               <div>
@@ -82,12 +81,12 @@ export default function UIKitPage() {
                 </BasilicButton>
               </div>
             </div>
-          </CardBody>
+          </BasilicCardBody>
         </BasilicCard>
 
         {/* Inputs Section */}
         <BasilicCard className="p-4 md:col-span-2">
-          <CardBody>
+          <BasilicCardBody>
             <h3 className="text-lg font-bold mb-4">Entrées & Recherche</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -99,22 +98,22 @@ export default function UIKitPage() {
                 <BasilicSearch placeholder="Rechercher des produits..." />
               </div>
             </div>
-          </CardBody>
+          </BasilicCardBody>
         </BasilicCard>
 
         {/* Navigation Section */}
         <BasilicCard className="p-4 md:col-span-2">
-          <CardBody>
+          <BasilicCardBody>
             <h3 className="text-lg font-bold mb-4">Onglets & Navigation</h3>
             <div className="w-full">
               <p className="text-tiny text-default-500 mb-4 font-mono uppercase tracking-wider">Navigation Principale</p>
               <NavigationTabs activePath="/app/mf" counts={{ mf: 12, mo: 5 }} disableNavigation={true} />
             </div>
-          </CardBody>
+          </BasilicCardBody>
         </BasilicCard>
         {/* Dropdowns Section */}
         <BasilicCard className="p-4 md:col-span-2">
-          <CardBody>
+          <BasilicCardBody>
             <h3 className="text-lg font-bold mb-4">Menus Déroulants</h3>
             <div className="flex flex-wrap gap-6 items-start">
               <div>
@@ -140,11 +139,11 @@ export default function UIKitPage() {
                 />
               </div>
             </div>
-          </CardBody>
+          </BasilicCardBody>
         </BasilicCard>
       {/* Modals Section */}
         <BasilicCard className="p-4 md:col-span-2">
-          <CardBody>
+          <BasilicCardBody>
             <h3 className="text-lg font-bold mb-4">Modales</h3>
             <div className="flex gap-4">
               <BasilicButton onPress={() => setIsModalOpen(true)}>Ouvrir la Modale</BasilicButton>
@@ -162,7 +161,7 @@ export default function UIKitPage() {
                 <p>Ceci est le contenu de la modale. Vous pouvez y mettre ce que vous voulez.</p>
               </BasilicModal>
             </div>
-          </CardBody>
+          </BasilicCardBody>
         </BasilicCard>
       </div>
 

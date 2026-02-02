@@ -59,12 +59,12 @@ export const loader = async ({ request }: { request: Request }) => {
                     await Promise.all(
                         batch.map(async (asset: { key: string }) => {
                             try {
-                                const response = await admin.rest.get({
-                                    path: `themes/${activeThemeId}/assets`,
-                                    query: { "asset[key]": asset.key },
-                                });
+                                const response = await fetch(
+                                    `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`,
+                                    { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
+                                );
                                 if (!response.ok) return;
-                                const assetData: any = await response.json();
+                                const assetData: { asset?: { value?: string } } = await response.json();
                                 const content = assetData.asset?.value || "";
                                 if (!content) return;
 

@@ -1,29 +1,17 @@
 import React from "react";
-import { 
-  Button as HeroButton, 
-  Card as HeroCard, 
-  Input as HeroInput,
-  Tabs as HeroTabs,
-  Tab as HeroTab,
-  Chip as HeroChip,
-  Modal as HeroModal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  Switch as HeroSwitch,
-  Table as HeroTable,
-  TableHeader,
-  TableColumn,
-  TableBody,
-  TableRow,
-  TableCell,
-  Dropdown as HeroDropdown,
-  DropdownTrigger as HeroDropdownTrigger,
-  DropdownMenu as HeroDropdownMenu,
-  DropdownItem as HeroDropdownItem
-} from "@heroui/react";
 import { useNavigate, useNavigation } from "react-router";
+import {
+  Button,
+  Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
+  Switch,
+  Table, TableHeader, TableColumn, TableBody, TableRow, TableCell,
+  Dropdown, DropdownTrigger, DropdownMenu, DropdownItem,
+  Input,
+  Card, CardHeader, CardBody, CardFooter,
+  Tabs, TabList, Tab, TabPanel,
+  Chip,
+} from "./ui";
+import type { SelectionKeys } from "./ui/Table";
 
 // --- TYPES ---
 interface AppBrandProps {
@@ -44,61 +32,55 @@ interface HeaderProps {
 
 // --- COMPONENTS ---
 
-export const AppBrand: React.FC<AppBrandProps> = ({ 
-  name = "Basilic", 
-  plan = "free", 
+export const AppBrand: React.FC<AppBrandProps> = ({
+  name = "Basilic",
+  plan = "free",
   logoColor = "#4BB961",
-  logoIcon = <span className="text-lg">B</span>
+  logoIcon = <span>B</span>
 }) => {
   return (
-    <div className="flex items-center gap-[12px]">
-      <div 
-        style={{ backgroundColor: logoColor }}
-        className="w-[33px] h-[33px] rounded-[10px] shadow-sm flex-shrink-0 flex items-center justify-center text-white font-bold"
-      >
+    <div className="app-brand">
+      <div className="app-brand__logo" style={{ backgroundColor: logoColor }}>
         {logoIcon}
       </div>
-      <div className="flex flex-col leading-none pt-[2px] gap-[3px]">
-        <span className="text-[20px] font-extrabold text-[#000000] tracking-tight">{name}</span>
-        <span className="text-[14px] font-medium text-[#808080] tracking-[-0.28px]">{plan}</span>
+      <div className="app-brand__info">
+        <span className="app-brand__name">{name}</span>
+        <span className="app-brand__plan">{plan}</span>
       </div>
     </div>
   );
 };
 
-export const DevModeToggle: React.FC<{ isChecked?: boolean; onChange?: (val: boolean) => void }> = ({ 
-  isChecked = false, 
-  onChange = () => {} 
+export const DevModeToggle: React.FC<{ isChecked?: boolean; onChange?: (val: boolean) => void }> = ({
+  isChecked = false,
+  onChange = () => {}
 }) => {
   return (
-    <div 
+    <div
       onClick={() => onChange(!isChecked)}
-      className="flex items-center gap-[8px] h-[40px] px-[12px] rounded-[12px] border border-transparent transition-all cursor-pointer select-none bg-default-100"
+      className={`dev-toggle ${isChecked ? 'dev-toggle--active' : ''}`}
+      role="switch"
+      aria-checked={isChecked}
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onChange(!isChecked); } }}
     >
-      <div className="text-[#71717A]">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <div className="dev-toggle__icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="16 18 22 12 16 6"></polyline>
           <polyline points="8 6 2 12 8 18"></polyline>
         </svg>
       </div>
-      <span className="text-[14px] font-medium text-[#71717A]">
-        Dev Mode
-      </span>
-      <HeroSwitch 
-        size="sm" 
-        isSelected={isChecked} 
-        onValueChange={onChange}
-        classNames={{
-          wrapper: "group-data-[selected=true]:bg-[#4BB961]"
-        }}
-      />
+      <span className="dev-toggle__label">Dev Mode</span>
+      <div className={`dev-toggle__switch ${isChecked ? 'dev-toggle__switch--on' : ''}`}>
+        <div className="dev-toggle__switch-thumb" />
+      </div>
     </div>
   );
 };
 
 export const Container: React.FC<ContainerProps> = ({ children }) => {
   return (
-    <div className="max-w-7xl mx-auto p-6 animate-in fade-in duration-500">
+    <div className="app-container">
       {children}
     </div>
   );
@@ -106,22 +88,36 @@ export const Container: React.FC<ContainerProps> = ({ children }) => {
 
 export const Header: React.FC<HeaderProps> = ({ children }) => {
   return (
-    <div className="flex justify-between items-center mb-8">
+    <div className="app-header">
       <AppBrand />
-      <div className="flex gap-4 items-center">
+      <div className="app-header__actions">
         {children}
       </div>
     </div>
   );
 };
 
-type BasilicButtonProps = React.ComponentProps<typeof HeroButton> & {
+type BasilicButtonProps = {
+  children?: React.ReactNode;
   icon?: React.ReactNode;
+  className?: string;
+  color?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
+  variant?: "solid" | "flat" | "light" | "ghost" | "bordered";
+  size?: "sm" | "md" | "lg";
+  isDisabled?: boolean;
+  isLoading?: boolean;
+  onPress?: () => void;
+  onClick?: () => void;
+  type?: "button" | "submit" | "reset";
 };
 
-// ... existing code ...
-
-export const BasilicSearch: React.FC<React.ComponentProps<typeof HeroInput>> = (props) => {
+export const BasilicSearch: React.FC<{
+  value?: string;
+  onValueChange?: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+}> = (props) => {
+  const { value, onValueChange, placeholder = "Search", className = "" } = props;
   const [shortcutSymbol, setShortcutSymbol] = React.useState("Ctrl");
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -130,7 +126,6 @@ export const BasilicSearch: React.FC<React.ComponentProps<typeof HeroInput>> = (
     setShortcutSymbol(isMac ? "⌘" : "Ctrl");
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Ctrl/Cmd + Shift + K
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         inputRef.current?.focus();
@@ -142,184 +137,207 @@ export const BasilicSearch: React.FC<React.ComponentProps<typeof HeroInput>> = (
   }, []);
 
   return (
-    <HeroInput
-      ref={inputRef}
-      classNames={{
-        base: "max-w-full sm:max-w-[20rem] h-[40px]",
-        mainWrapper: "h-full",
-        input: "text-small",
-        inputWrapper: "h-[40px] font-normal text-default-500 bg-default-100 dark:bg-default-50/20 rounded-[12px]",
-      }}
-      placeholder="Rechercher..."
-      size="sm"
-      startContent={
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-default-400 pointer-events-none flex-shrink-0">
+    <div className={`basilic-search ${className}`}>
+      <div className="basilic-search__icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
           <path d="m21 21-4.3-4.3"></path>
         </svg>
-      }
-      endContent={
-        <div className="pointer-events-none flex items-center">
-          <span className="text-default-400 text-tiny border border-default-200 bg-default-50 rounded-md px-1.5 py-0.5 font-sans font-medium whitespace-nowrap">{shortcutSymbol} ⇧ K</span>
-        </div>
-      }
-      type="text"
-      isClearable={false}
-      {...props}
-    />
+      </div>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => onValueChange?.(e.target.value)}
+        placeholder={placeholder}
+        className="basilic-search__input"
+      />
+      <div className="basilic-search__shortcut">
+        <span className="basilic-search__shortcut-key">{shortcutSymbol} ⇧ K</span>
+      </div>
+    </div>
   );
 };
 
-export const BasilicButton: React.FC<BasilicButtonProps> = ({ 
-// ... existing BasilicButton code ...
-  children, 
-  icon, 
-  className = "", 
+export const BasilicButton: React.FC<BasilicButtonProps> = ({
+  children,
+  icon,
+  className = "",
   color = "primary",
   variant = "solid",
-  ...props 
+  size = "md",
+  isDisabled,
+  isLoading,
+  onPress,
+  onClick,
+  type = "button",
 }) => {
-  // Styles personnalisés pour correspondre au design Figma
-  const isPrimarySolid = color === ("primary" as any) && variant === ("solid" as any);
-  const customStyles = isPrimarySolid 
-    ? "bg-[#4BB961] shadow-[0px_10px_15px_-3px_rgba(75,185,97,0.30),0px_4px_6px_-2px_rgba(75,185,97,0.05)] text-white border-none" 
-    : "";
+  const isPrimarySolid = color === "primary" && variant === "solid";
+  const customClass = isPrimarySolid ? "basilic-btn--primary" : "";
 
   return (
-    <HeroButton
-      className={`h-[40px] px-[16px] rounded-[12px] font-normal text-[14px] gap-[8px] transition-all hover:scale-[1.02] active:scale-[0.98] ${customStyles} ${className}`}
+    <Button
+      className={`basilic-btn ${customClass} ${className}`}
       startContent={icon}
-      variant={variant as any}
-      color={color as any}
-      {...props}
+      variant={variant}
+      color={color}
+      size={size}
+      isDisabled={isDisabled}
+      isLoading={isLoading}
+      onPress={onPress || onClick}
+      type={type}
     >
       {children}
-    </HeroButton>
+    </Button>
   );
 };
 
-export const BasilicModal = ({ 
-  isOpen, 
-  onClose, 
-  title, 
-  children, 
+export const BasilicModal = ({
+  isOpen,
+  onClose,
+  title,
+  children,
   footer,
   size = "md"
-}: { 
-  isOpen: boolean; 
-  onClose: () => void; 
-  title?: React.ReactNode; 
-  children: React.ReactNode; 
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title?: React.ReactNode;
+  children: React.ReactNode;
   footer?: React.ReactNode;
   size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl" | "full";
 }) => {
   return (
-    <HeroModal 
-      isOpen={isOpen} 
-      onClose={onClose} 
-      size={size as any} 
-      backdrop="blur"
-      classNames={{
-        backdrop: "bg-[#292f46]/50 backdrop-opacity-40",
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size={size}
+      hideCloseButton={false}
     >
       <ModalContent>
-        {() => (
-          <>
-            {title && <ModalHeader className="flex flex-col gap-1">{title}</ModalHeader>}
-            <ModalBody>
-              {children}
-            </ModalBody>
-            {footer && (
-              <ModalFooter>
-                {footer}
-              </ModalFooter>
-            )}
-          </>
+        {title && <ModalHeader>{title}</ModalHeader>}
+        <ModalBody>
+          {children}
+        </ModalBody>
+        {footer && (
+          <ModalFooter>
+            {footer}
+          </ModalFooter>
         )}
       </ModalContent>
-    </HeroModal>
-  );
-};
-export const BasilicCard = HeroCard;
-export const BasilicInput = HeroInput;
-export const BasilicTabs = HeroTabs;
-export const BasilicTab = HeroTab;
-export const BasilicChip = HeroChip;
-
-export const BasilicTable = ({ columns, items, renderCell }: { columns: any[], items: any[], renderCell: (item: any, columnKey: string) => React.ReactNode }) => {
-  return (
-    <HeroTable aria-label="Tableau de données" shadow="none" className="border border-divider rounded-xl overflow-hidden">
-      <TableHeader columns={columns}>
-        {(column) => (
-          <TableColumn key={column.key} align={column.key === "actions" ? "center" : "start"} className="bg-default-50 text-default-600 font-semibold uppercase text-tiny">
-            {column.label}
-          </TableColumn>
-        )}
-      </TableHeader>
-      <TableBody items={items} emptyContent={"Aucune donnée trouvée."}>
-        {(item) => (
-          <TableRow key={item.id} className="hover:bg-default-50 transition-colors border-b border-divider last:border-0">
-            {(columnKey) => <TableCell>{renderCell(item, columnKey as string)}</TableCell>}
-          </TableRow>
-        )}
-      </TableBody>
-    </HeroTable>
+    </Modal>
   );
 };
 
+export const BasilicCard = Card;
+export const BasilicCardHeader = CardHeader;
+export const BasilicCardBody = CardBody;
+export const BasilicCardFooter = CardFooter;
 
-export const BasilicDropdown = ({ 
-  triggerLabel = "Actions", 
-  items = [],
-  onAction
-}: { 
-  triggerLabel?: React.ReactNode;
-  items: Array<{ key: string; label: string; color?: string; className?: string }>;
-  onAction?: (key: React.Key) => void;
+export const BasilicInput = Input;
+export const BasilicTabs = Tabs;
+export const BasilicTabList = TabList;
+export const BasilicTab = Tab;
+export const BasilicTabPanel = TabPanel;
+export const BasilicChip = Chip;
+
+export const BasilicTable = ({
+  columns,
+  items,
+  renderCell,
+  selectionMode = "none",
+  selectedKeys,
+  onSelectionChange
+}: {
+  columns: { key: string; label: string }[];
+  items: any[];
+  renderCell: (item: any, columnKey: string) => React.ReactNode;
+  selectionMode?: "none" | "single" | "multiple";
+  selectedKeys?: SelectionKeys;
+  onSelectionChange?: (keys: SelectionKeys) => void;
 }) => {
   return (
-    <HeroDropdown>
-      <HeroDropdownTrigger>
-        <HeroButton 
-          variant="flat" 
-          className="h-[40px] px-[16px] rounded-[12px] bg-default-100 text-default-900 font-medium capitalize gap-2"
-          endContent={
-             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50">
-                <path d="m6 9 6 6 6-6"/>
-             </svg>
-          }
-        >
-          {triggerLabel}
-        </HeroButton>
-      </HeroDropdownTrigger>
-      <HeroDropdownMenu 
-        aria-label="Dropdown Actions" 
-        onAction={onAction}
-        className="p-1"
-        itemClasses={{
-          base: "rounded-[8px] data-[hover=true]:bg-default-100 data-[hover=true]:text-default-900",
-        }}
-      >
-        {items.map((item) => (
-           <HeroDropdownItem 
-             key={item.key} 
-             className={item.className}
-             color={item.color as any}
-           >
-             {item.label}
-           </HeroDropdownItem>
+    <Table
+      ariaLabel="Tableau de données"
+      className="mf-table"
+      selectionMode={selectionMode}
+      selectedKeys={selectedKeys}
+      onSelectionChange={onSelectionChange}
+    >
+      <TableHeader>
+        {columns.map((column) => (
+          <TableColumn key={column.key} className="mf-table__header">
+            {column.label}
+          </TableColumn>
         ))}
-      </HeroDropdownMenu>
-    </HeroDropdown>
+      </TableHeader>
+      <TableBody>
+        {items.length === 0 ? (
+          <TableRow key="empty">
+            <TableCell colSpan={columns.length}>
+              <div className="modal-empty">Aucune donnée trouvée.</div>
+            </TableCell>
+          </TableRow>
+        ) : (
+          items.map((item) => (
+            <TableRow key={item.id} className="mf-table__row">
+              {columns.map((column) => (
+                <TableCell key={column.key}>
+                  {renderCell(item, column.key)}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))
+        )}
+      </TableBody>
+    </Table>
   );
 };
 
-export const NavigationTabs = ({ activePath, counts, disableNavigation = false, hideLoadingModal = false }: { activePath: string, counts: { mf: number, mo: number, t?: number, m?: number, menu?: number }, disableNavigation?: boolean, hideLoadingModal?: boolean }) => {
+
+export const BasilicDropdown = ({
+  triggerLabel = "Actions",
+  items = [],
+  onAction
+}: {
+  triggerLabel?: React.ReactNode;
+  items: Array<{ key: string; label: string; color?: "default" | "danger"; className?: string }>;
+  onAction?: (key: string) => void;
+}) => {
+  return (
+    <Dropdown>
+      <DropdownTrigger>
+        <Button variant="flat" className="dropdown-btn" endContent={
+          <span className="dropdown-btn__icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </span>
+        }>
+          {triggerLabel}
+        </Button>
+      </DropdownTrigger>
+      <DropdownMenu aria-label="Dropdown Actions">
+        {items.map((item) => (
+          <DropdownItem
+            key={item.key}
+            className={item.className}
+            color={item.color}
+            onPress={() => onAction?.(item.key)}
+          >
+            {item.label}
+          </DropdownItem>
+        ))}
+      </DropdownMenu>
+    </Dropdown>
+  );
+};
+
+export const NavigationTabs = ({ activePath, counts, disableNavigation = false, hideLoadingModal = false }: { activePath: string, counts: { mf: number, mo: number, t?: number, m?: number, menu?: number, sections?: number }, disableNavigation?: boolean, hideLoadingModal?: boolean }) => {
   const navigate = useNavigate();
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading" && !hideLoadingModal;
-  
+
   const tabs = [
     { key: "/app/mf", label: "Champs Méta", count: counts.mf, icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
@@ -330,53 +348,42 @@ export const NavigationTabs = ({ activePath, counts, disableNavigation = false, 
     { key: "/app/templates", label: "Templates", count: counts.t, icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
     )},
+    { key: "/app/sections", label: "Sections", count: counts.sections ?? 0, icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+    )},
     { key: "/app/menu", label: "Menus", count: counts.menu ?? 0, icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     )},
-    // { key: "/app/media", label: "Médias", count: counts.m, icon: (...)
   ];
 
   return (
     <>
-      <div className="bg-[#F4F4F5]/60 p-1.5 rounded-[20px] flex items-center gap-1 w-fit shadow-sm border border-[#E4E4E7]/50">
+      <div className="nav-tabs">
         {tabs.map((tab) => {
           const isActive = activePath === tab.key;
           return (
             <button
               key={tab.key}
               onClick={() => !disableNavigation && navigate(tab.key)}
-              className={`
-                relative flex items-center gap-2.5 px-4 h-10 rounded-[14px] transition-all duration-300 group
-                ${isActive 
-                  ? 'bg-white shadow-[0_4px_12px_rgba(0,0,0,0.08)] text-[#18181B]' 
-                  : 'text-[#71717A] hover:text-[#18181B] hover:bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]'}
-              `}
+              className={`nav-tabs__item ${isActive ? 'nav-tabs__item--active' : ''}`}
             >
-              <span className={`transition-colors duration-300 ${isActive ? 'text-[#4BB961]' : 'text-[#A1A1AA] group-hover:text-[#4BB961]'}`}>
-                {tab.icon}
-              </span>
-              <span className="text-[14px] font-semibold tracking-tight">{tab.label}</span>
+              <span className="nav-tabs__icon">{tab.icon}</span>
+              <span className="nav-tabs__label">{tab.label}</span>
               {tab.count !== undefined && (
-                <span className={`
-                  min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300
-                  ${isActive ? 'bg-[#4BB961] text-white scale-110' : 'bg-[#E4E4E7] text-[#71717A] group-hover:bg-[#4BB961] group-hover:text-white'}
-                `}>
-                  {tab.count}
-                </span>
+                <span className="nav-tabs__badge">{tab.count}</span>
               )}
             </button>
           );
         })}
       </div>
-      
-      {/* Loading Modal */}
+
       {isLoading && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-[24px] p-8 shadow-2xl flex flex-col items-center gap-4 min-w-[280px] animate-in zoom-in-95 duration-300">
-            <div className="w-12 h-12 border-4 border-[#4BB961]/20 border-t-[#4BB961] rounded-full animate-spin"></div>
-            <div className="text-center">
-              <div className="text-[16px] font-semibold text-[#18181B] mb-1">Chargement...</div>
-              <div className="text-[13px] text-[#71717A]">Veuillez patienter</div>
+        <div className="loading-overlay">
+          <div className="loading-modal">
+            <div className="loading-modal__spinner"></div>
+            <div className="loading-modal__text">
+              <div className="loading-modal__title">Chargement...</div>
+              <div className="loading-modal__subtitle">Veuillez patienter</div>
             </div>
           </div>
         </div>
@@ -384,3 +391,19 @@ export const NavigationTabs = ({ activePath, counts, disableNavigation = false, 
     </>
   );
 };
+
+// Re-export UI components for direct use
+export {
+  Button,
+  Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
+  Switch,
+  Table, TableHeader, TableColumn, TableBody, TableRow, TableCell,
+  Dropdown, DropdownTrigger, DropdownMenu, DropdownItem,
+  Input,
+  Card, CardHeader, CardBody, CardFooter,
+  Tabs, TabList, Tab, TabPanel,
+  Chip,
+  Tooltip,
+  Pagination,
+  Divider,
+} from "./ui";

@@ -6,7 +6,6 @@
 .mf-cell {
     height: 100%;
     width: 100%;
-    padding: 12px 8px;
 }
 
 .mf-cell--multi {
@@ -35,12 +34,11 @@
     white-space: nowrap;
 }
 
-.mf-cell--key, 
+.mf-cell--key,
 .mf-cell--type,
 .mf-cell--status,
 .mf-cell--code,
 .mf-cell--badge {
-    background-color: #F4F4F5; 
     display: flex;
     align-items: center;
 }
@@ -62,15 +60,17 @@
 
 /* --- COLONNES DEV MODE --- */
 .mf-cell--dev {
-    position: absolute;
-    inset: 0;
-    background-color: #F4F4F5;
-    border-left: 1px solid white;
-    transition: none !important;
+    background-color: transparent;
 }
 
-.mf-cell--dev:first-child {
-    border-left: none;
+/* Cellules dans les colonnes Dev Mode (CLÉ TECH, STRUCTURE, DIAG, CODE) */
+.mf-cell--devmode {
+    background-color: #F4F3F4 !important;
+}
+
+.mf-table__row:hover .mf-cell--devmode,
+.mf-table__row[data-selected="true"] .mf-cell--devmode {
+    background-color: transparent !important;
 }
 
 /* --- TEXTES --- */
@@ -138,78 +138,77 @@
     cursor: text !important;
     user-select: text !important;
     -webkit-user-select: text !important;
+    border: none !important;
 }
 
-/* --- BADGE COUNT --- */
-.mf-badge--count {
-    display: inline-flex;
-    align-items: center;
+.ui-table__row:hover,
+.ui-table__row--selected,
+.ui-table__row--selected:hover {
+    .mf-badge--count,
+    .mf-badge--code,
+    .mf-chip {
+        background: #fff;
+    }
+}
+
+/* --- BADGE (STRUCTURE, CODE, ASSING.) --- */
+.mf-badge {
+    display: flex;
+    height: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 0 8px;
     justify-content: center;
-    
+    align-items: center;
+    border-radius: 9999px;
+    background: rgba(212, 212, 216, 0.40);
+
     font-family: Inter;
     font-size: 12px;
-    font-style: normal;
     font-weight: 400;
-    line-height: 16px; 
-
-    background: rgba(212, 212, 216, 0.40);
-    border-radius: 100px;
-    padding: 4px 12px;
-    color: #000;
+    color: #3F3F46;
     white-space: nowrap;
 }
 
-.mf-table__row[data-selected="true"] .mf-badge--count,
-.mf-table__row[data-hover="true"] .mf-badge--count {
-    background: rgba(0, 111, 238, 0.20) !important;
+.mf-table__row[data-selected="true"] .mf-badge,
+.mf-table__row[data-hover="true"] .mf-badge {
+    background: rgba(212, 212, 216, 0.60);
 }
 
-
-/* --- CHIP TYPE --- */
-.mf-chip {
-    display: inline-flex;
-    align-items: center;
+/* Alias pour compatibilité */
+.mf-chip,
+.mf-badge--count,
+.mf-badge--code {
+    display: flex;
+    height: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 0 8px;
     justify-content: center;
-    
+    align-items: center;
+    border-radius: 9999px;
+    background: rgba(212, 212, 216, 0.40);
+
     font-family: Inter;
     font-size: 12px;
-    font-style: normal;
     font-weight: 400;
-    line-height: 16px; 
-
-    background: rgba(212, 212, 216, 0.40);
-    border-radius: 100px;
-    padding: 4px 10px;
-    color: #000;
+    color: #3F3F46;
+    white-space: nowrap;
 }
 
 .mf-table__row[data-selected="true"] .mf-chip,
-.mf-table__row[data-hover="true"] .mf-chip {
-    background: #FAFAFA
+.mf-table__row[data-hover="true"] .mf-chip,
+.mf-table__row[data-selected="true"] .mf-badge--count,
+.mf-table__row[data-hover="true"] .mf-badge--count,
+.mf-table__row[data-selected="true"] .mf-badge--code,
+.mf-table__row[data-hover="true"] .mf-badge--code {
+    background: rgba(212, 212, 216, 0.60);
 }
 
-/* --- BADGE CODE (Oui/Non) --- */
-.mf-badge--code {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    
-    font-family: Inter;
-    font-size: 12px;
-    font-style: normal;
-    font-weight: 400;
-    line-height: 16px; 
-
-    background: rgba(212, 212, 216, 0.40); /* Default gray like chip */
-    border-radius: 100px;
-    padding: 4px 10px;
-    color: #000;
-}
-
-/* Hover/Selected state for "Non" badges (gray ones) */
-.mf-table__row[data-selected="true"] .mf-badge--code:not(.mf-badge--found),
-.mf-table__row[data-hover="true"] .mf-badge--code:not(.mf-badge--found) {
-    background: #FAFAFA;
+/* "Oui" Badge Style (Green) */
+.mf-badge--found {
+    background: #DCFCE7 !important;
+    color: #15803D !important;
 }
 
 /* "Oui" Badge Style (Green) - unaffected by row hover color change */
@@ -321,6 +320,9 @@ tr[role="rowgroup"]::after {
 .mf-table {
     padding: 0;
     margin: 0;
+    overflow: visible;
+    table-layout: auto;
+    width: 100%;
 }
 
 .mf-table__wrapper {
@@ -350,6 +352,7 @@ tr[role="rowgroup"]::after {
     height: 44px;
     padding: 12px 8px;
     position: relative;
+    overflow: visible;
 
     color: #71717A;
     font-family: Inter;
@@ -363,7 +366,11 @@ tr[role="rowgroup"]::after {
 /* Border radius sur le thead */
 .mf-table thead {
     border-radius: 8px 8px 0 0;
-    overflow: hidden;
+    overflow: visible;
+}
+
+.mf-table thead tr {
+    overflow: visible;
 }
 
 .mf-table thead tr {
@@ -401,6 +408,18 @@ tr[role="rowgroup"]::after {
     width: 100% !important;
 }
 
+/* Reset pour la page sections : on fixe la largeur de la colonne checkbox */
+.mf-table--sections th:nth-child(1),
+.mf-table--sections td:nth-child(1) {
+    width: 48px !important;
+    min-width: 48px !important;
+    max-width: 48px !important;
+}
+.mf-table--sections th:nth-child(2),
+.mf-table--sections td:nth-child(2) {
+    width: 100% !important;
+}
+
 /* On autorise les clics et la sélection sur toutes les cellules */
 .mf-table .mf-table__row td:not(:first-child) {
     pointer-events: auto !important;
@@ -423,12 +442,14 @@ tr[role="rowgroup"]::after {
 }
 
 /* Bleu au hover uniquement sur les lignes du corps du tableau, pas sur le thead */
-.mf-table--templates tbody .mf-table__row:hover {
+.mf-table--templates tbody .mf-table__row:hover,
+.mf-table--sections tbody .mf-table__row:hover {
     background-color: rgba(0, 111, 238, 0.20) !important;
 }
 
 /* Badge background on hover match other pages (tbody only) */
-.mf-table--templates tbody .mf-table__row:hover .mf-badge--count {
+.mf-table--templates tbody .mf-table__row:hover .mf-badge--count,
+.mf-table--sections tbody .mf-table__row:hover .mf-badge--count {
     background: rgba(0, 111, 238, 0.20) !important;
 }
 
@@ -500,6 +521,26 @@ tr[role="rowgroup"]::after {
     vertical-align: middle !important;
 }
 
+/* NEUTRALISER les classes Tailwind de HeroUI sur les cellules */
+.mf-table td.py-2,
+.mf-table td.py-3,
+.mf-table td.px-2,
+.mf-table td.px-3,
+.mf-table th.py-2,
+.mf-table th.py-3,
+.mf-table th.px-2,
+.mf-table th.px-3 {
+    padding: 0 !important;
+}
+
+.mf-table [class*="whitespace-"],
+.mf-table [class*="align-middle"],
+.mf-table [class*="text-small"],
+.mf-table [class*="font-normal"],
+.mf-table [class*="outline-"] {
+    all: unset;
+}
+
 .mf-table__cell:first-child {
     display: flex !important;
     justify-content: center;
@@ -534,21 +575,6 @@ tr[role="rowgroup"]::after {
 .mf-table__row.mf-table__row--reviewed[data-selected="true"],
 .mf-table__row.mf-table__row--reviewed[data-hover="true"] {
     background-color: #D4D4D8 !important;
-}
-
-.mf-table__row--to-review .mf-cell--key,
-.mf-table__row--to-review .mf-cell--type,
-.mf-table__row--to-review .mf-cell--status,
-.mf-table__row--to-review .mf-cell--code,
-.mf-table__row--to-review .mf-cell--badge {
-    background-color: #F4F4F5 !important;
-}
-.mf-table__row--reviewed .mf-cell--key,
-.mf-table__row--reviewed .mf-cell--type,
-.mf-table__row--reviewed .mf-cell--status,
-.mf-table__row--reviewed .mf-cell--code,
-.mf-table__row--reviewed .mf-cell--badge {
-    background-color: #E4E4E7 !important;
 }
 
 /* RE-ENABLE POINTER EVENTS ON CHECKBOX CELL */
@@ -703,10 +729,24 @@ tr[role="rowgroup"]::after {
     text-align: center !important;
 }
 
+/* Colonne FILE */
+.mf-col--file {
+    width: 200px;
+    white-space: nowrap;
+}
+
+/* Colonne DATE */
+.mf-col--date {
+    width: 150px;
+    white-space: nowrap;
+    text-align: center;
+}
+
 /* Colonne COUNT */
 .mf-col--count {
-    width: 140px !important;
-    text-align: center !important;
+    width: 140px;
+    white-space: nowrap;
+    text-align: center;
 }
 
 /* Colonne ACTIONS */
@@ -1100,4 +1140,33 @@ tr[role="rowgroup"]::after {
     padding: 48px 24px 40px;
     font-size: 14px;
     color: #71717A;
+}
+
+/* ============================================
+   SORTABLE COLUMNS
+   ============================================ */
+.mf-col--sortable {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.15s ease;
+}
+
+.mf-col--sortable:hover {
+    opacity: 0.8;
+}
+
+.mf-sort-icon {
+    color: #71717A;
+    transition: transform 0.2s ease;
+}
+
+.mf-sort-icon--desc {
+    transform: rotate(180deg);
+}
+
+.mf-sort-icon--neutral {
+    opacity: 0.4;
 }

@@ -1,12 +1,18 @@
 import { useState, useMemo, useEffect } from "react";
-import { useLoaderData, useLocation, useRevalidator, useSubmit, useActionData } from "react-router";
+import { useLoaderData, useLocation, useActionData } from "react-router";
 import { authenticate, apiVersion } from "../shopify.server";
 import db from "../db.server";
-import { getMetaobjectCount, getMetafieldCount, getMediaCount, getMenuCount } from "../utils/graphql-helpers.server";
+import { getMetaobjectCount, getMetafieldCount, getMediaCount, getMenuCount, getSectionsCount } from "../utils/graphql-helpers.server";
+import { getReviewStatusMap } from "../utils/reviewStatus.server";
+import { createRouteAction } from "../utils/createRouteAction";
 import "../styles/metafields-table.css";
+import "../styles/basilic-ui.css";
 import { useScan } from "../components/ScanProvider";
-import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton } from "../components/BasilicUI";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
+import { AppBrand, BasilicSearch, NavigationTabs, BasilicButton, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "../components/BasilicUI";
+import { useReviewStatus } from "../hooks/useReviewStatus";
+import { useTableSelection } from "../hooks/useTableSelection";
+import { SelectionActionBar } from "../components/SelectionActionBar";
+import { Icons } from "../components/Icons";
 
 interface ResourceInfo {
     id: string;
@@ -29,15 +35,6 @@ interface TemplateItem {
     resourcesInactive: ResourceInfo[];
 }
 
-const Icons = {
-    Products: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}><path d="M8.372 11.6667C7.11703 10.4068 7.23007 8.25073 8.62449 6.85091L12.6642 2.79552C14.0586 1.3957 16.2064 1.28222 17.4613 2.54206C18.7163 3.8019 18.6033 5.95797 17.2088 7.3578L15.189 9.3855" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path opacity="0.5" d="M11.6281 8.33333C12.8831 9.59317 12.77 11.7492 11.3756 13.1491L9.35575 15.1768L7.33591 17.2045C5.94149 18.6043 3.79373 18.7178 2.53875 17.4579C1.28378 16.1981 1.39682 14.042 2.79124 12.6422L4.81111 10.6144" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>),
-    Collections: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" {...props}><path d="M18.3334 15.8333C18.3334 16.2754 18.1578 16.6993 17.8453 17.0118C17.5327 17.3244 17.1088 17.5 16.6667 17.5H3.33341C2.89139 17.5 2.46746 17.3244 2.1549 17.0118C1.84234 16.6993 1.66675 16.2754 1.66675 15.8333V4.16667C1.66675 3.72464 1.84234 3.30072 2.1549 2.98816C2.46746 2.67559 2.89139 2.5 3.33341 2.5H7.50008L9.16675 5H16.6667C17.1088 5 17.5327 5.17559 17.8453 5.48816C18.1578 5.80072 18.3334 6.22464 18.3334 6.66667V15.8333Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>),
-    Pages: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>),
-    Blogs: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>),
-    Articles: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>),
-    ChevronRight: (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}><path d="M4.45508 9.96001L7.71508 6.70001C8.10008 6.31501 8.10008 5.68501 7.71508 5.30001L4.45508 2.04001" stroke="#A1A1AA" strokeWidth="1.5" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round"/></svg>),
-};
-
 const norm = (s: string) => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 export const loader = async ({ request }: { request: Request }) => {
@@ -48,13 +45,7 @@ export const loader = async ({ request }: { request: Request }) => {
     const themesJson = await themesRes.json();
     const activeTheme = themesJson.data?.themes?.nodes?.[0];
     if (!activeTheme) {
-        let reviewStatusMapEarly: Record<string, "to_review" | "reviewed"> = {};
-        try {
-            const rows = await db.itemReviewStatus.findMany({ where: { shop: session.shop, source: "templates" }, select: { itemId: true, status: true } });
-            rows.forEach((r: { itemId: string; status: string }) => { reviewStatusMapEarly[r.itemId] = r.status as "to_review" | "reviewed"; });
-        } catch {
-            // ignore
-        }
+        const reviewStatusMapEarly = await getReviewStatusMap(db, session.shop, "templates");
         return { templateData: {}, moCount: 0, mfCount: 0, themeId: null, totalTemplates: 0, mediaCount: 0, shop: session.shop, reviewStatusMap: reviewStatusMapEarly };
     }
     const themeId = activeTheme.id.split('/').pop();
@@ -119,18 +110,18 @@ export const loader = async ({ request }: { request: Request }) => {
                     } }
                 }
             }`;
-            const res = await admin.graphql(query, { variables: { cursor } });
-            const json = await res.json();
-            const data = json.data?.[queryField];
+            const res: Response = await admin.graphql(query, { variables: { cursor } });
+            const json: { data?: Record<string, { edges: { node: { templateSuffix: string | null; isGiftCard?: boolean; status?: string; id?: string; title?: string; blog?: { id: string } } }[]; pageInfo: { hasNextPage: boolean; endCursor: string } }> } = await res.json();
+            const data: { edges: { node: { templateSuffix: string | null; isGiftCard?: boolean; status?: string; id?: string; title?: string; blog?: { id: string } } }[]; pageInfo: { hasNextPage: boolean; endCursor: string } } | undefined = json.data?.[queryField];
             if (!data) break;
 
-            list = [...list, ...data.edges.map((e: { node: { templateSuffix: string | null, isGiftCard?: boolean, status?: string, id?: string, title?: string, blog?: { id: string } } }) => ({ 
-                suffix: e.node.templateSuffix || null, 
+            list = [...list, ...data.edges.map((e: { node: { templateSuffix: string | null, isGiftCard?: boolean, status?: string, id?: string, title?: string, blog?: { id: string } } }) => ({
+                suffix: e.node.templateSuffix || null,
                 isGiftCard: !!e.node.isGiftCard,
-                status: e.node.status || null,
-                id: e.node.id || null,
-                title: e.node.title || null,
-                blogId: e.node.blog?.id || null
+                status: e.node.status || undefined,
+                id: e.node.id || undefined,
+                title: e.node.title || undefined,
+                blogId: e.node.blog?.id || undefined
             }))];
             hasNextPage = data.pageInfo.hasNextPage;
             cursor = data.pageInfo.endCursor;
@@ -211,113 +202,129 @@ export const loader = async ({ request }: { request: Request }) => {
     const shopDomain = session.shop;
     
     // OPTIMISATION: Tous les counts en parallèle avec cache
-    const [moCount, mfCount, mediaCount, menuCount] = await Promise.all([
+    const [moCount, mfCount, mediaCount, menuCount, sectionsCount] = await Promise.all([
         getMetaobjectCount(admin, shopDomain),
         getMetafieldCount(admin, shopDomain),
         getMediaCount(admin, shopDomain),
-        getMenuCount(admin, shopDomain)
+        getMenuCount(admin, shopDomain),
+        getSectionsCount(admin, shopDomain, session.accessToken!)
     ]);
-    let reviewStatusMap: Record<string, "to_review" | "reviewed"> = {};
-    try {
-        const reviewRows = await db.itemReviewStatus.findMany({
-            where: { shop: shopDomain, source: "templates" },
-            select: { itemId: true, status: true }
-        });
-        reviewRows.forEach((r: { itemId: string; status: string }) => { reviewStatusMap[r.itemId] = r.status as "to_review" | "reviewed"; });
-    } catch {
-        // Table absente ou client non régénéré
-    }
+    const reviewStatusMap = await getReviewStatusMap(db, shopDomain, "templates");
 
-    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId, mediaCount, menuCount, shop: session.shop, reviewStatusMap };
+    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId, mediaCount, menuCount, sectionsCount, shop: session.shop, reviewStatusMap };
 };
 
-export const action = async ({ request }: { request: Request }) => {
-    const { admin } = await authenticate.admin(request);
-    const formData = await request.formData();
-    const actionType = formData.get("action");
-
-    if (actionType === "set_review_status") {
-        try {
-            const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
-            const shopJson = await shopRes.json();
-            const shop = shopJson.data?.shop?.myshopifyDomain;
-            if (!shop) return { ok: false, errors: [{ message: "Shop non trouvé" }] };
-            const ids = JSON.parse((formData.get("ids") as string) || "[]") as string[];
-            const status = (formData.get("status") as string) as "to_review" | "reviewed";
-            if (!ids.length || !status || !["to_review", "reviewed"].includes(status)) return { ok: false, errors: [{ message: "Paramètres invalides" }] };
-            for (const itemId of ids) {
-                await db.itemReviewStatus.upsert({
-                    where: { shop_itemId_source: { shop, itemId, source: "templates" } },
-                    create: { shop, itemId, status, source: "templates" },
-                    update: { status }
-                });
-            }
-            return { ok: true, action: "set_review_status" };
-        } catch (e) {
-            return { ok: false, errors: [{ message: "Base de données non prête." }] };
-        }
-    }
-
-    if (actionType === "clear_review_status") {
-        try {
-            const shopRes = await admin.graphql(`{ shop { myshopifyDomain } }`);
-            const shopJson = await shopRes.json();
-            const shop = shopJson.data?.shop?.myshopifyDomain;
-            if (!shop) return { ok: false, errors: [{ message: "Shop non trouvé" }] };
-            const ids = JSON.parse((formData.get("ids") as string) || "[]") as string[];
-            if (!ids.length) return { ok: false, errors: [{ message: "Aucun id" }] };
-            await db.itemReviewStatus.deleteMany({ where: { shop, itemId: { in: ids }, source: "templates" } });
-            return { ok: true, action: "clear_review_status" };
-        } catch (e) {
-            return { ok: false, errors: [{ message: "Base de données non prête." }] };
-        }
-    }
-
-    return null;
-};
+export const action = createRouteAction({
+    source: "templates"
+});
 
 export default function AppTemplates() {
-    const { templateData, moCount, mfCount, totalTemplates, mediaCount, menuCount, shop, reviewStatusMap } = useLoaderData<typeof loader>();
+    const { templateData, moCount, mfCount, totalTemplates, mediaCount, menuCount, sectionsCount, shop, reviewStatusMap } = useLoaderData<typeof loader>();
     const location = useLocation();
-    const revalidator = useRevalidator();
-    const submit = useSubmit();
     const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[] } | null>();
-    
-    // Utiliser le contexte de scan global
+
+    // ✨ Hooks custom pour simplifier la logique
+    const { setReviewStatus, clearReviewStatus, revalidator } = useReviewStatus();
+    const { selectedKeys, handleSelectionChange, clearSelection } = useTableSelection();
     const { isScanning, templateResults, startScan } = useScan();
-    
+
     const [search, setSearch] = useState("");
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({ "Produits": true });
     const [modalOpen, setModalOpen] = useState(false);
     const [modalData, setModalData] = useState<{ template: TemplateItem; type: 'active' | 'inactive' } | null>(null);
-    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+    const [sortConfig, setSortConfig] = useState<{ column: string | null; direction: 'asc' | 'desc' }>({ column: null, direction: 'asc' });
+
+    const handleSort = (columnKey: string) => {
+        setSortConfig(prev => {
+            if (prev.column === columnKey) {
+                // Si on clique sur la même colonne, inverser la direction
+                return { column: columnKey, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+            } else {
+                // Nouvelle colonne, commencer par 'asc'
+                return { column: columnKey, direction: 'asc' };
+            }
+        });
+    };
+
+    const sortData = (data: TemplateItem[]) => {
+        if (!sortConfig.column) return data;
+
+        const sorted = [...data].sort((a, b) => {
+            let aVal: string = '';
+            let bVal: string = '';
+
+            switch (sortConfig.column) {
+                case 'name':
+                    aVal = (a.name || '').toLowerCase();
+                    bVal = (b.name || '').toLowerCase();
+                    break;
+                default:
+                    return 0;
+            }
+
+            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return sorted;
+    };
 
     useEffect(() => {
         if (!actionData?.ok || !actionData?.action) return;
         if (actionData.action === "set_review_status" || actionData.action === "clear_review_status") {
-            setSelectedKeys(new Set());
+            clearSelection();
             revalidator.revalidate();
         }
-    }, [actionData, revalidator]);
+    }, [actionData, revalidator, clearSelection]);
 
-    const handleOnSelectionChange = (sectionData: TemplateItem[], keys: Set<string> | "all") => {
-        if (keys === "all") {
-            const newSet = new Set(selectedKeys);
-            sectionData.forEach((d) => newSet.add(d.key));
-            setSelectedKeys(newSet);
-        } else {
-            const currentTableKeys = new Set(sectionData.map((d) => d.key));
-            const otherKeys = new Set([...selectedKeys].filter((k) => !currentTableKeys.has(k)));
-            const final = new Set([...otherKeys, ...keys]);
-            setSelectedKeys(final);
-        }
-    };
 
     const columns = [
-        { key: "name", label: "NOM DU TEMPLATE", className: "mf-template-col-name" },
-        { key: "updated", label: "DATE DE CRÉATION", className: "w-[180px] whitespace-nowrap" },
-        { key: "countActive", label: "ASSIGNATIONS ACTIVES", className: "w-[180px] whitespace-nowrap" },
-        { key: "countInactive", label: "ASSIGNATIONS INACTIVES", className: "w-[180px] whitespace-nowrap" }
+        {
+            key: "name",
+            label: (
+                <div
+                    className="mf-col--sortable"
+                    onClick={(e) => { e.stopPropagation(); handleSort('name'); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleSort('name'); } }}
+                    role="button"
+                    tabIndex={0}
+                >
+                    <span>NOM DU TEMPLATE</span>
+                    {sortConfig.column === 'name' ? (
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 12 12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className={`mf-sort-icon ${sortConfig.direction === 'desc' ? 'mf-sort-icon--desc' : ''}`}
+                        >
+                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    ) : (
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 12 12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className="mf-sort-icon mf-sort-icon--neutral"
+                        >
+                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                    )}
+                </div>
+            ),
+            className: "mf-col--name"
+        },
+        { key: "updated", label: "DATE DE CRÉATION", className: "mf-col--date" },
+        { key: "countActive", label: "ASSIGNATIONS ACTIVES", className: "mf-col--count" },
+        { key: "countInactive", label: "ASSIGNATIONS INACTIVES", className: "mf-col--count" }
     ];
 
     /* Empêche tout événement pointer/clic sur les cellules de déclencher la sélection (React Aria utilise usePress) */
@@ -337,7 +344,7 @@ export default function AppTemplates() {
             );
             case "updated": return (
                 <div className="mf-cell mf-cell--start w-full mf-template-cell-no-select" onClick={stopRowSelect} onPointerDown={stopRowSelect} onPointerUp={stopRowSelect} onMouseDown={stopRowSelect} onMouseUp={stopRowSelect}>
-                    <span className="text-[14px] text-[#71717A]">{new Date(item.updated_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    <span className="text-14 text-gray-500">{new Date(item.updated_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                 </div>
             );
             case "countActive": {
@@ -347,7 +354,7 @@ export default function AppTemplates() {
                 return (
                     <div className="mf-cell mf-cell--center whitespace-nowrap w-full mf-template-cell-no-select" onClick={stopRowSelect} onPointerDown={stopRowSelect} onPointerUp={stopRowSelect} onMouseDown={stopRowSelect} onMouseUp={stopRowSelect}>
                         <span 
-                            className={`mf-badge--count ${item.countActive > 0 ? 'bg-[#4BB961]/10 text-[#15803D]' : 'bg-[#E4E4E7]/50 text-[#71717A]'} ${isClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                            className={`mf-badge--count ${item.countActive > 0 ? 'badge-success' : 'badge-neutral'} ${isClickable ? 'cursor-pointer hover-opacity transition-opacity' : ''}`}
                             onClick={isClickable ? (e: React.MouseEvent) => {
                                 e.stopPropagation();
                                 setModalData({ template: item, type: 'active' });
@@ -375,7 +382,7 @@ export default function AppTemplates() {
                 return (
                     <div className="mf-cell mf-cell--center whitespace-nowrap w-full mf-template-cell-no-select" onClick={stopRowSelect} onPointerDown={stopRowSelect} onPointerUp={stopRowSelect} onMouseDown={stopRowSelect} onMouseUp={stopRowSelect}>
                         <span 
-                            className={`mf-badge--count ${item.countInactive > 0 ? 'bg-[#F43F5E]/10 text-[#DC2626]' : 'bg-[#E4E4E7]/50 text-[#71717A]'} ${isClickable ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                            className={`mf-badge--count ${item.countInactive > 0 ? 'badge-danger' : 'badge-neutral'} ${isClickable ? 'cursor-pointer hover-opacity transition-opacity' : ''}`}
                             onClick={isClickable ? (e: React.MouseEvent) => {
                                 e.stopPropagation();
                                 setModalData({ template: item, type: 'inactive' });
@@ -416,52 +423,54 @@ export default function AppTemplates() {
     ];
 
     return (
-        <div className="min-h-screen bg-white animate-in fade-in duration-500">
-            <div className="mx-auto px-6 py-6 space-y-6" style={{ maxWidth: '1800px' }}>
-                <div className="flex justify-between items-center w-full p-4 bg-default-100 rounded-[16px]">
+        <div className="page">
+            <div className="page-content page-content--wide space-y-6">
+                <div className="page-header">
                     <AppBrand />
-                    <BasilicButton 
-                        variant="flat" 
-                        className="bg-white border border-[#E4E4E7] text-[#18181B] hover:bg-[#F4F4F5]" 
+                    <BasilicButton
+                        variant="flat"
+                        className="btn-secondary"
                         isLoading={isScanning}
-                        onPress={() => startScan()} 
-                        icon={isScanning ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
+                        onPress={() => startScan()}
+                        icon={isScanning ? null : <Icons.Refresh />}
                     >
                         Scan Code
                     </BasilicButton>
                 </div>
 
-                <div className="flex items-center justify-between w-full">
-                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount, menu: menuCount }} />
-                    <div className="flex-shrink-0" style={{ width: '320px' }}>
+                <div className="page-nav-row">
+                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: totalTemplates, m: mediaCount, menu: menuCount, sections: sectionsCount }} />
+                    <div style={{ width: '320px' }}>
                         <BasilicSearch value={search} onValueChange={setSearch} placeholder="Rechercher un template..." />
                     </div>
                 </div>
 
                 {search ? (
                     filteredSearch.length > 0 ? (
-                        <div className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <div className="mf-section animate-in fade-in slide-in-from-bottom duration-500">
                             <div className="mf-section__header mf-section__header--open">
                                 <div className="mf-section__title-group">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                    <Icons.Search />
                                     <span className="mf-section__title">Résultats</span>
                                     <span className="mf-section__count">{filteredSearch.length}</span>
                                 </div>
                             </div>
                             <div className="mf-table__base">
-                                <Table aria-label="Résultats" removeWrapper selectionMode="multiple" selectionBehavior="checkbox" onRowAction={() => {}} selectedKeys={new Set([...selectedKeys].filter((k) => filteredSearch.some((d: TemplateItem) => d.key === k)))} onSelectionChange={(keys) => handleOnSelectionChange(filteredSearch, keys as Set<string> | "all")} className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
-                                    <TableHeader columns={columns}>{(c) => <TableColumn key={c.key} align={c.key === "countActive" || c.key === "countInactive" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>}</TableHeader>
-                                    <TableBody items={filteredSearch}>{(item: TemplateItem) => <TableRow key={item.key} className={reviewStatusMap?.[item.key] === "to_review" ? "mf-table__row--to-review" : reviewStatusMap?.[item.key] === "reviewed" ? "mf-table__row--reviewed" : undefined}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>}</TableBody>
+                                <Table aria-label="Résultats" removeWrapper selectionMode="multiple" selectionBehavior="checkbox" onRowAction={() => {}} selectedKeys={new Set([...selectedKeys].filter((k) => filteredSearch.some((d: TemplateItem) => d.key === k)))} onSelectionChange={(keys) => handleSelectionChange(filteredSearch, keys as Set<string> | "all")} className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
+                                    <TableHeader>{columns.map((c) => <TableColumn key={c.key} align={c.key === "countActive" || c.key === "countInactive" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader>
+                                    <TableBody items={sortData(filteredSearch)}>{(item: TemplateItem) => <TableRow key={item.key} rowKey={item.key} className={reviewStatusMap?.[item.key] === "to_review" ? "mf-table__row--to-review" : reviewStatusMap?.[item.key] === "reviewed" ? "mf-table__row--reviewed" : undefined}>{columns.map((c) => <TableCell key={c.key}>{renderCell(item, c.key)}</TableCell>)}</TableRow>}</TableBody>
                                 </Table>
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-20 bg-[#F4F4F5]/50 rounded-[32px] border-2 border-dashed border-[#E4E4E7]"><div className="text-[17px] font-semibold text-[#18181B]">Aucun résultat trouvé.</div></div>
+                        <div className="empty-state">
+                            <div className="empty-state__title">Aucun résultat trouvé.</div>
+                        </div>
                     )
                 ) : allItems.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 bg-[#F4F4F5]/50 rounded-[32px] border-2 border-dashed border-[#E4E4E7] animate-in fade-in duration-300">
-                        <div className="text-[17px] font-semibold text-[#18181B] mb-2">Aucun template trouvé</div>
-                        <div className="text-[14px] text-[#71717A] text-center max-w-md">Votre thème actif n&apos;a pas encore de fichiers templates (product, collection, page, blog, article). Les templates s&apos;afficheront ici une fois présents dans le thème.</div>
+                    <div className="empty-state animate-in fade-in">
+                        <div className="empty-state__title">Aucun template trouvé</div>
+                        <div className="empty-state__description">Votre thème actif n&apos;a pas encore de fichiers templates (product, collection, page, blog, article). Les templates s&apos;afficheront ici une fois présents dans le thème.</div>
                     </div>
                 ) : (
                     <div className="space-y-4">
@@ -470,16 +479,16 @@ export default function AppTemplates() {
                             if (data.length === 0) return null;
                             const isOpen = openSections[s.label];
                             return (
-                                <div key={s.type} className="mf-section animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div key={s.type} className="mf-section animate-in fade-in slide-in-from-bottom duration-500">
                                     <div className={`mf-section__header ${isOpen ? 'mf-section__header--open' : 'mf-section__header--closed'}`} onClick={() => setOpenSections(p => ({ ...p, [s.label]: !p[s.label] }))}>
                                         <div className="mf-section__title-group"><span className="mf-section__icon">{s.icon}</span><span className="mf-section__title">{s.label}</span><span className="mf-section__count">{data.length}</span></div>
                                         <span className={`mf-section__chevron ${isOpen ? 'mf-section__chevron--open' : ''}`}><Icons.ChevronRight /></span>
                                     </div>
                                     {isOpen && (
                                         <div className="mf-table__base">
-                                            <Table aria-label={s.label} removeWrapper selectionMode="multiple" selectionBehavior="checkbox" onRowAction={() => {}} selectedKeys={new Set([...selectedKeys].filter((k) => data.some((d: TemplateItem) => d.key === k)))} onSelectionChange={(keys) => handleOnSelectionChange(data, keys as Set<string> | "all")} className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
-                                                <TableHeader columns={columns}>{(c: any) => (<TableColumn key={c.key} align={c.key === "countActive" || c.key === "countInactive" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>)}</TableHeader>
-                                                <TableBody items={data} emptyContent="Aucun template trouvé.">{(item: any) => (<TableRow key={item.key} className={reviewStatusMap?.[item.key] === "to_review" ? "mf-table__row--to-review" : reviewStatusMap?.[item.key] === "reviewed" ? "mf-table__row--reviewed" : undefined}>{(ck) => <TableCell>{renderCell(item, ck)}</TableCell>}</TableRow>)}</TableBody>
+                                            <Table aria-label={s.label} removeWrapper selectionMode="multiple" selectionBehavior="checkbox" onRowAction={() => {}} selectedKeys={new Set([...selectedKeys].filter((k) => data.some((d: TemplateItem) => d.key === k)))} onSelectionChange={(keys) => handleSelectionChange(data, keys as Set<string> | "all")} className="mf-table mf-table--templates" classNames={{ th: "mf-table__header", td: "mf-table__cell", tr: "mf-table__row" }}>
+                                                <TableHeader>{columns.map((c: any) => (<TableColumn key={c.key} align={c.key === "countActive" || c.key === "countInactive" ? "center" : "start"} className={c.className}>{c.label}</TableColumn>))}</TableHeader>
+                                                <TableBody items={sortData(data)} emptyContent="Aucun template trouvé.">{(item: any) => (<TableRow key={item.key} rowKey={item.key} className={reviewStatusMap?.[item.key] === "to_review" ? "mf-table__row--to-review" : reviewStatusMap?.[item.key] === "reviewed" ? "mf-table__row--reviewed" : undefined}>{columns.map((c: any) => <TableCell key={c.key}>{renderCell(item, c.key)}</TableCell>)}</TableRow>)}</TableBody>
                                             </Table>
                                         </div>
                                     )}
@@ -490,56 +499,47 @@ export default function AppTemplates() {
                 )}
             </div>
 
-            {selectedKeys.size > 0 && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
-                    <div className="flex items-center gap-4 bg-[#18181B] p-2 pl-5 pr-2 rounded-full shadow-2xl ring-1 ring-white/10">
-                        <div className="flex items-center gap-3">
-                            <span className="text-[14px] font-medium text-white">{selectedKeys.size} sélectionnés</span>
-                            <button onClick={() => setSelectedKeys(new Set())} className="text-[#A1A1AA] hover:text-white transition-colors" aria-label="Tout désélectionner">
-                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><g opacity="0.8"><path d="M10 18.3333C14.6024 18.3333 18.3333 14.6023 18.3333 9.99999C18.3333 5.39762 14.6024 1.66666 10 1.66666C5.39763 1.66666 1.66667 5.39762 1.66667 9.99999C1.66667 14.6023 5.39763 18.3333 10 18.3333Z" fill="#3F3F46"/><path d="M12.5 7.5L7.5 12.5M7.5 7.5L12.5 12.5" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></g></svg>
-                            </button>
-                        </div>
-                        <div className="h-6 w-[1px] bg-[#3F3F46]"></div>
-                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys))); fd.append("status", "to_review"); submit(fd, { method: "post" }); }} className="bg-[#71717A] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#52525B] transition-colors gap-2">À review</Button>
-                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys))); fd.append("status", "reviewed"); submit(fd, { method: "post" }); }} className="bg-[#3F3F46] text-white font-medium px-4 h-[36px] rounded-full hover:bg-[#27272A] transition-colors gap-2">Review</Button>
-                        <Button onPress={() => { const fd = new FormData(); fd.append("action", "clear_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys))); submit(fd, { method: "post" }); }} variant="flat" className="text-[#A1A1AA] font-medium px-4 h-[36px] rounded-full hover:bg-white/10 hover:text-white transition-colors">Réinitialiser</Button>
-                    </div>
-                </div>
-            )}
+            <SelectionActionBar
+                selectedCount={selectedKeys.size}
+                onClearSelection={clearSelection}
+                onMarkToReview={() => setReviewStatus(Array.from(selectedKeys), "to_review")}
+                onMarkReviewed={() => setReviewStatus(Array.from(selectedKeys), "reviewed")}
+                onClearReviewStatus={() => clearReviewStatus(Array.from(selectedKeys))}
+            />
 
             {/* Modal pour afficher les produits assignés */}
-            <Modal 
-                isOpen={modalOpen} 
+            <Modal
+                isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
                 size="2xl"
                 scrollBehavior="inside"
                 classNames={{
-                    base: "bg-white",
-                    header: "border-b border-[#E4E4E7]",
-                    body: "py-6",
-                    footer: "border-t border-[#E4E4E7]"
+                    base: "modal-base",
+                    header: "modal-header",
+                    body: "modal-body",
+                    footer: "modal-footer"
                 }}
             >
                 <ModalContent>
                     {(onClose) => (
                         <>
-                            <ModalHeader className="flex flex-col gap-1">
-                                <div className="text-[20px] font-semibold text-[#18181B]">
+                            <ModalHeader className="flex flex-col gap-2">
+                                <div className="modal-title">
                                     {modalData?.template.name}
                                 </div>
-                                <div className="text-[14px] text-[#71717A] font-normal">
+                                <div className="modal-subtitle">
                                     {(() => {
-                                        const labels: Record<string, string> = { 
-                                            product: 'produit', 
-                                            collection: 'collection', 
-                                            page: 'page', 
-                                            blog: 'blog', 
-                                            article: 'article' 
+                                        const labels: Record<string, string> = {
+                                            product: 'produit',
+                                            collection: 'collection',
+                                            page: 'page',
+                                            blog: 'blog',
+                                            article: 'article'
                                         };
                                         const label = labels[modalData?.template.type || ''] || 'ressource';
-                                        const plural = modalData?.type === 'active' 
-                                            ? (modalData.template.resourcesActive.length > 1 ? 's' : '')
-                                            : (modalData?.template.resourcesInactive.length > 1 ? 's' : '');
+                                        const plural = modalData?.type === 'active'
+                                            ? ((modalData.template.resourcesActive?.length ?? 0) > 1 ? 's' : '')
+                                            : ((modalData?.template.resourcesInactive?.length ?? 0) > 1 ? 's' : '');
                                         const statusText = modalData?.type === 'active' ? 'actif' : 'inactif';
                                         return `${label}${plural} ${statusText}${plural} assigné${plural}`;
                                     })()}
@@ -577,13 +577,10 @@ export default function AppTemplates() {
                                     };
                                     
                                     const isActive = modalData.type === 'active';
-                                    const hoverBorderColor = isActive ? 'hover:border-[#4BB961]' : 'hover:border-[#F43F5E]';
-                                    const hoverTextColor = isActive ? 'group-hover:text-[#4BB961]' : 'group-hover:text-[#F43F5E]';
-                                    const badgeColor = isActive 
-                                        ? 'bg-[#4BB961]/10 text-[#15803D]' 
-                                        : 'bg-[#F43F5E]/10 text-[#DC2626]';
+                                    const cardClass = isActive ? 'resource-card--active' : 'resource-card--inactive';
+                                    const badgeClass = isActive ? 'resource-card__badge--active' : 'resource-card__badge--inactive';
                                     const arrowColor = isActive ? '#4BB961' : '#F43F5E';
-                                    
+
                                     return (
                                         <div className="space-y-4">
                                             {resources.length > 0 ? (
@@ -591,32 +588,32 @@ export default function AppTemplates() {
                                                     {resources.map((resource) => {
                                                         const resourceId = resource.id.split('/').pop();
                                                         const resourceUrl = getResourceUrl(resource, modalData.template.type);
-                                                        const badgeText = isActive 
-                                                            ? 'ACTIF' 
+                                                        const badgeText = isActive
+                                                            ? 'ACTIF'
                                                             : (modalData.template.type === 'product' ? (resource.status || 'INACTIF') : 'ASSIGNÉ');
-                                                        
+
                                                         return (
                                                             <a
                                                                 key={resource.id}
                                                                 href={resourceUrl}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
-                                                                className={`flex items-center justify-between p-3 bg-[#F4F4F5] rounded-lg border border-[#E4E4E7] hover:bg-[#E4E4E7] ${hoverBorderColor} transition-all cursor-pointer group`}
+                                                                className={`resource-card ${cardClass}`}
                                                             >
-                                                                <div className="flex-1">
-                                                                    <div className={`text-[15px] font-medium text-[#18181B] ${hoverTextColor} transition-colors`}>
+                                                                <div className="resource-card__content">
+                                                                    <div className="resource-card__title">
                                                                         {resource.title}
                                                                     </div>
-                                                                    <div className="text-[12px] text-[#71717A] mt-1">
+                                                                    <div className="resource-card__meta">
                                                                         ID: {resourceId}
                                                                         {modalData.template.type === 'product' && resource.status && ` • Status: ${resource.status}`}
                                                                     </div>
                                                                 </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className={`px-2 py-1 text-[12px] font-medium ${badgeColor} rounded`}>
+                                                                <div className="resource-card__actions">
+                                                                    <span className={`resource-card__badge ${badgeClass}`}>
                                                                         {badgeText}
                                                                     </span>
-                                                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="resource-card__arrow">
                                                                         <path d="M6 3L11 8L6 13" stroke={arrowColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                                                     </svg>
                                                                 </div>
@@ -625,14 +622,14 @@ export default function AppTemplates() {
                                                     })}
                                                 </div>
                                             ) : (
-                                                <div className="text-center py-8 text-[#71717A]">
+                                                <div className="modal-empty">
                                                     {(() => {
-                                                        const labels: Record<string, string> = { 
-                                                            product: 'produit', 
-                                                            collection: 'collection', 
-                                                            page: 'page', 
-                                                            blog: 'blog', 
-                                                            article: 'article' 
+                                                        const labels: Record<string, string> = {
+                                                            product: 'produit',
+                                                            collection: 'collection',
+                                                            page: 'page',
+                                                            blog: 'blog',
+                                                            article: 'article'
                                                         };
                                                         const label = labels[modalData.template.type] || 'ressource';
                                                         const statusText = isActive ? 'actif' : 'inactif';
@@ -645,11 +642,11 @@ export default function AppTemplates() {
                                 })()}
                             </ModalBody>
                             <ModalFooter>
-                                <Button 
-                                    color="default" 
-                                    variant="light" 
+                                <Button
+                                    color="default"
+                                    variant="light"
                                     onPress={onClose}
-                                    className="text-[#18181B]"
+                                    className="text-gray-900"
                                 >
                                     Fermer
                                 </Button>

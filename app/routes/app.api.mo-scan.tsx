@@ -16,17 +16,17 @@ export const loader = async ({ request }: { request: Request }) => {
     let moCursor: string | null = null;
     try {
         for (;;) {
-            const r = await admin.graphql(
-                `query getMetaobjectTypes($cursor: String) { 
-                    metaobjectDefinitions(first: 250, after: $cursor) { 
-                        pageInfo { hasNextPage endCursor } 
-                        nodes { type } 
-                    } 
+            const r: Response = await admin.graphql(
+                `query getMetaobjectTypes($cursor: String) {
+                    metaobjectDefinitions(first: 250, after: $cursor) {
+                        pageInfo { hasNextPage endCursor }
+                        nodes { type }
+                    }
                 }`,
                 { variables: { cursor: moCursor } }
             );
-            const j = await r.json();
-            const data = j.data?.metaobjectDefinitions;
+            const j: { data?: { metaobjectDefinitions?: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { type: string }[] } } } = await r.json();
+            const data: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { type: string }[] } | undefined = j.data?.metaobjectDefinitions;
             if (data?.nodes) moTypes.push(...data.nodes.map((n: { type: string }) => n.type));
             if (!data?.pageInfo?.hasNextPage) break;
             moCursor = data.pageInfo.endCursor;

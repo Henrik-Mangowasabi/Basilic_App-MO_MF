@@ -100,7 +100,6 @@ body, html {
   font-weight: 600;
   color: var(--text-sub);
   text-decoration: none;
-  transition: all 0.2s;
 }
 
 .ui-tab-link:hover {
@@ -184,7 +183,7 @@ body, html {
 }
 
 .ui-table th {
-  background: #fff;
+  background: #F4F3F4;
   padding: 12px 8px;
   font-size: 11px;
   text-transform: uppercase;
@@ -205,8 +204,6 @@ body, html {
 .ui-table td {
   padding: 12px 8px;
   border-bottom: 1px solid var(--border-color);
-  font-size: 13px;
-  vertical-align: middle;
 }
 
 /* Dev Mode Specifics */

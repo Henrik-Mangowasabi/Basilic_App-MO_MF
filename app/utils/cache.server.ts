@@ -3,7 +3,7 @@ import db from "../db.server";
 // Durée de validité du cache en minutes
 const CACHE_TTL_MINUTES = 5;
 
-export type CacheKey = 'mfCount' | 'moCount' | 'mediaCount' | 'templatesCount' | 'menuCount';
+export type CacheKey = 'mfCount' | 'moCount' | 'mediaCount' | 'templatesCount' | 'menuCount' | 'sectionsCount';
 
 /**
  * Récupère une valeur du cache si elle existe et n'est pas expirée
