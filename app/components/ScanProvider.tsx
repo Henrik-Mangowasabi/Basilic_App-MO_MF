@@ -5,7 +5,17 @@ const SCAN_DONE_KEY = "basilic_scan_done";
 const MF_RESULTS_KEY = "mf_scan_results";
 const MO_RESULTS_KEY = "mo_scan_results";
 const TEMPLATE_RESULTS_KEY = "template_scan_results";
-const MENU_RESULTS_KEY = "menu_scan_results";
+const MENU_RESULTS_KEY = "menu_results";
+const SECTION_RESULTS_KEY = "section_results";
+
+interface SectionScanResult {
+    id: string;
+    fileName: string;
+    key: string;
+    schemaName: string;
+    assignmentCount: number;
+    assignments: string[];
+}
 
 interface ScanContextType {
     isScanning: boolean;
@@ -14,6 +24,7 @@ interface ScanContextType {
     moResults: Set<string>;
     templateResults: Set<string>;
     menuResults: Set<string>;
+    sectionResults: SectionScanResult[];
     startScan: () => void;
     hasScanRun: boolean;
 }
@@ -39,14 +50,15 @@ export function ScanProvider({ children }: ScanProviderProps) {
     const [moResults, setMoResults] = useState<Set<string>>(new Set());
     const [templateResults, setTemplateResults] = useState<Set<string>>(new Set());
     const [menuResults, setMenuResults] = useState<Set<string>>(new Set());
+    const [sectionResults, setSectionResults] = useState<SectionScanResult[]>([]);
 
     const scanAbortRef = useRef<AbortController | null>(null);
-    const progressRef = useRef<{ mf: number; mo: number; tpl: number; menu: number }>({ mf: 0, mo: 0, tpl: 0, menu: 0 });
+    const progressRef = useRef<{ mf: number; mo: number; tpl: number; menu: number; sections: number }>({ mf: 0, mo: 0, tpl: 0, menu: 0, sections: 0 });
 
     const updateProgress = useCallback(() => {
-        const { mf, mo, tpl, menu } = progressRef.current;
-        const total = mf + mo + tpl + menu;
-        setScanProgress(Math.round(total / 4));
+        const { mf, mo, tpl, menu, sections } = progressRef.current;
+        const total = mf + mo + tpl + menu + sections;
+        setScanProgress(Math.round(total / 5));
     }, []);
 
     // Charger le cache
@@ -56,12 +68,14 @@ export function ScanProvider({ children }: ScanProviderProps) {
             const mo = sessionStorage.getItem(MO_RESULTS_KEY);
             const tpl = sessionStorage.getItem(TEMPLATE_RESULTS_KEY);
             const menu = sessionStorage.getItem(MENU_RESULTS_KEY);
+            const sections = sessionStorage.getItem(SECTION_RESULTS_KEY);
             const done = sessionStorage.getItem(SCAN_DONE_KEY);
 
             if (mf) setMfResults(new Set(JSON.parse(mf)));
             if (mo) setMoResults(new Set(JSON.parse(mo)));
             if (tpl) setTemplateResults(new Set(JSON.parse(tpl)));
             if (menu) setMenuResults(new Set(JSON.parse(menu)));
+            if (sections) setSectionResults(JSON.parse(sections));
             if (done === "true") setHasScanRun(true);
         } catch (e) {}
     }, []);
@@ -73,7 +87,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
 
         setIsScanning(true);
         setScanProgress(0);
-        progressRef.current = { mf: 0, mo: 0, tpl: 0, menu: 0 };
+        progressRef.current = { mf: 0, mo: 0, tpl: 0, menu: 0, sections: 0 };
 
         const basePath = window.location.pathname.includes('/app') 
             ? window.location.pathname.split('/app')[0] + '/app'
@@ -81,10 +95,11 @@ export function ScanProvider({ children }: ScanProviderProps) {
 
         try {
             const endpoints = [
-                { url: `${basePath}/api/mf-scan`, key: 'mf', setter: setMfResults, storage: MF_RESULTS_KEY },
-                { url: `${basePath}/api/mo-scan`, key: 'mo', setter: setMoResults, storage: MO_RESULTS_KEY },
-                { url: `${basePath}/api/template-scan`, key: 'tpl', setter: setTemplateResults, storage: TEMPLATE_RESULTS_KEY },
-                { url: `${basePath}/api/menu-scan`, key: 'menu', setter: setMenuResults, storage: MENU_RESULTS_KEY }
+                { url: `${basePath}/api/mf-scan`, key: 'mf', setter: (res: any) => setMfResults(new Set(res)), storage: MF_RESULTS_KEY },
+                { url: `${basePath}/api/mo-scan`, key: 'mo', setter: (res: any) => setMoResults(new Set(res)), storage: MO_RESULTS_KEY },
+                { url: `${basePath}/api/template-scan`, key: 'tpl', setter: (res: any) => setTemplateResults(new Set(res)), storage: TEMPLATE_RESULTS_KEY },
+                { url: `${basePath}/api/menu-scan`, key: 'menu', setter: (res: any) => setMenuResults(new Set(res)), storage: MENU_RESULTS_KEY },
+                { url: `${basePath}/api/section-scan`, key: 'sections', setter: (res: any) => setSectionResults(res), storage: SECTION_RESULTS_KEY }
             ];
 
             const results = await Promise.all(endpoints.map(async (e) => {
@@ -92,7 +107,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
                     progressRef.current[e.key as keyof typeof progressRef.current] = p;
                     updateProgress();
                 });
-                e.setter(new Set(res));
+                e.setter(res);
                 sessionStorage.setItem(e.storage, JSON.stringify(res));
                 return res;
             }));
@@ -122,7 +137,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
     }, [runScan]);
 
     return (
-        <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, templateResults, menuResults, startScan, hasScanRun }}>
+        <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, templateResults, menuResults, sectionResults, startScan, hasScanRun }}>
             {children}
             {isScanning && (
                 <div className="loading-overlay">

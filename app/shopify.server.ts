@@ -4,7 +4,8 @@ import {
   AppDistribution,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
-import { MemorySessionStorage } from "@shopify/shopify-app-session-storage-memory";
+import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
+import prisma from "./db.server";
 
 import { restResources } from "@shopify/shopify-api/rest/admin/2024-10";
 
@@ -19,7 +20,7 @@ const shopify = shopifyApp({
   scopes: process.env.SCOPES?.split(",").map((s) => s.trim()).filter(Boolean) ?? undefined,
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
-  sessionStorage: new MemorySessionStorage(),
+  sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
   
   // Maintenant que les versions correspondent, ceci va fonctionner :

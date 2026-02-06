@@ -26,6 +26,9 @@
     --color-danger-dark: #d14444;
     --color-danger-light: rgba(244, 63, 94, 0.1);
 
+    --color-info: #3B82F6;
+    --color-info-dark: #1D4ED8;
+
     /* Nuances de gris */
     --color-black: #18181B;
     --color-gray-900: #18181B;
@@ -284,8 +287,7 @@ body {
     display: flex;
     align-items: center;
     gap: var(--space-4);
-
-    padding: var(--space-2);
+    padding: 10px 10px 10px 30px;
     background: var(--color-gray-900);
     border-radius: var(--radius-full);
     box-shadow: var(--shadow-2xl);
@@ -374,6 +376,14 @@ body {
 
 .selection-action-bar__button--danger:hover {
     background: var(--color-danger-dark);
+}
+
+.selection-action-bar__button--to-review {
+    background: var(--color-info);
+}
+
+.selection-action-bar__button--to-review:hover {
+    background: var(--color-info-dark);
 }
 
 /* ============================================
@@ -740,6 +750,8 @@ body {
 .modal-body {
     padding-top: var(--space-6);
     padding-bottom: var(--space-6);
+    max-height: 60vh;
+    overflow-y: auto;
 }
 
 .modal-footer {
@@ -793,11 +805,17 @@ body {
     flex: 1;
 }
 
+.resource-card {
+    color: inherit;
+    text-decoration: none;
+}
+
 .resource-card__title {
     font-size: 15px;
     font-weight: 500;
     color: var(--color-gray-900);
     transition: color var(--transition-fast);
+    text-decoration: none !important;
 }
 
 .resource-card--active:hover .resource-card__title {
@@ -1087,11 +1105,11 @@ button.ui-btn.btn-modal-danger:hover,
 }
 
 .btn-action-bar--review {
-    background: var(--color-gray-600);
+    background: var(--color-info) !important;
 }
 
 .btn-action-bar--review:hover {
-    background: var(--color-gray-700);
+    background: var(--color-info-dark) !important;
 }
 
 .btn-action-bar--reviewed {
@@ -2917,16 +2935,6 @@ button.ui-btn.btn-modal-danger:hover,
     background: #CDE1F5 !important;
 }
 
-.mf-table__row--to-review .mf-cell--devmode,
-.mf-table__row--to-review {
-    background: #F4F3F4 !important;
-}
-
-.mf-table__row--reviewed .mf-cell--devmode,
-.mf-table__row--reviewed {
-    background: #E3E4E7 !important;
-}
-
 .ui-table__td {
     padding: 12px 16px;
     font-size: 14px;
@@ -3077,6 +3085,7 @@ button.ui-btn.btn-modal-danger:hover,
     padding: 24px;
     overflow-y: auto;
     flex: 1;
+    max-height: 60vh;
 }
 .ui-modal__body > div {
     display: flex;

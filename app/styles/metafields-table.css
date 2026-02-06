@@ -73,6 +73,24 @@
     background-color: transparent !important;
 }
 
+/* Dev Mode cells in "à review" rows (blue) */
+.mf-table__row--to-review .mf-cell--devmode {
+    background-color: rgba(59, 130, 246, 0.1) !important;
+}
+.mf-table__row--to-review[data-selected="true"] .mf-cell--devmode,
+.mf-table__row--to-review[data-hover="true"] .mf-cell--devmode {
+    background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Dev Mode cells in "reviewed" rows (green) */
+.mf-table__row--reviewed .mf-cell--devmode {
+    background-color: rgba(75, 185, 97, 0.1) !important;
+}
+.mf-table__row--reviewed[data-selected="true"] .mf-cell--devmode,
+.mf-table__row--reviewed[data-hover="true"] .mf-cell--devmode {
+    background-color: rgba(75, 185, 97, 0.2) !important;
+}
+
 /* --- TEXTES --- */
 .mf-text--title {
     color: var(--colors-layout-foreground, #18181B);
@@ -559,22 +577,16 @@ tr[role="rowgroup"]::after {
     border: none !important;
 }
 
-/* Lignes marquées "À review" (gris clair) — persisté en base, partagé entre utilisateurs */
-.mf-table__row.mf-table__row--to-review {
-    background-color: #F4F4F5 !important;
-}
-.mf-table__row.mf-table__row--to-review[data-selected="true"],
-.mf-table__row.mf-table__row--to-review[data-hover="true"] {
-    background-color: #E4E4E7 !important;
+/* Lignes marquées "À review" (bleu) — persisté en base, partagé entre utilisateurs */
+.mf-table__row--to-review .mf-cell--devmode,   
+.mf-table__row--to-review {
+    background-color: rgba(59, 130, 246, 0.2) !important;
 }
 
-/* Lignes marquées "Review" (gris foncé) */
-.mf-table__row.mf-table__row--reviewed {
-    background-color: #E4E4E7 !important;
-}
-.mf-table__row.mf-table__row--reviewed[data-selected="true"],
-.mf-table__row.mf-table__row--reviewed[data-hover="true"] {
-    background-color: #D4D4D8 !important;
+/* Lignes marquées "Review" (vert) */
+.mf-table__row--reviewed .mf-cell--devmode,
+.mf-table__row--reviewed {
+    background-color: rgba(75, 185, 97, 0.2) !important;
 }
 
 /* RE-ENABLE POINTER EVENTS ON CHECKBOX CELL */

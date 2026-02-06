@@ -101,18 +101,19 @@ export const loader = async ({ request }: { request: Request }) => {
 
                 controller.enqueue(encoder.encode(sse({ progress: 35, message: "Récupération des fichiers JSON..." })));
 
-                // 4. Récupérer tous les fichiers JSON (templates/*.json et sections/*.json)
-                const jsonAssets = allAssets.filter((a: { key: string }) =>
-                    (a.key.startsWith('templates/') || a.key.startsWith('sections/')) && a.key.endsWith('.json')
+                // 4. Récupérer tous les fichiers susceptibles de contenir des sections
+                const scanAssets = allAssets.filter((a: { key: string }) =>
+                    (a.key.startsWith('templates/') || a.key.startsWith('sections/') || a.key.startsWith('layout/') || a.key.startsWith('snippets/')) && 
+                    (a.key.endsWith('.json') || a.key.endsWith('.liquid'))
                 );
 
-                controller.enqueue(encoder.encode(sse({ progress: 40, message: `${jsonAssets.length} fichiers JSON à scanner...` })));
+                controller.enqueue(encoder.encode(sse({ progress: 40, message: `${scanAssets.length} fichiers à scanner...` })));
 
-                // 5. Scanner les fichiers JSON pour trouver les assignations
-                const totalJsonFiles = jsonAssets.length;
+                // 5. Scanner les fichiers pour trouver les assignations
+                const totalScanFiles = scanAssets.length;
 
-                for (let i = 0; i < jsonAssets.length; i += batchSize) {
-                    const batch = jsonAssets.slice(i, i + batchSize);
+                for (let i = 0; i < scanAssets.length; i += batchSize) {
+                    const batch = scanAssets.slice(i, i + batchSize);
 
                     await Promise.all(batch.map(async (asset: { key: string }) => {
                         try {
@@ -126,52 +127,49 @@ export const loader = async ({ request }: { request: Request }) => {
                             const json = await res.json();
                             const content = json.asset?.value || "";
 
-                            // Parser le JSON
-                            try {
-                                const parsedJson = JSON.parse(content);
+                            const foundTypesAcrossFile = new Set<string>();
 
-                                // Fonction récursive pour chercher toutes les occurrences de "type"
-                                const findSectionTypes = (obj: any, fileName: string): string[] => {
-                                    const types: string[] = [];
-
-                                    if (typeof obj === 'object' && obj !== null) {
-                                        if (obj.type && typeof obj.type === 'string') {
-                                            types.push(obj.type);
+                            if (asset.key.endsWith('.json')) {
+                                try {
+                                    const parsedJson = JSON.parse(content);
+                                    const findSectionTypes = (obj: any) => {
+                                        if (typeof obj === 'object' && obj !== null) {
+                                            if (obj.type && typeof obj.type === 'string') {
+                                                foundTypesAcrossFile.add(obj.type);
+                                            }
+                                            Object.values(obj).forEach(findSectionTypes);
                                         }
-
-                                        Object.values(obj).forEach(value => {
-                                            types.push(...findSectionTypes(value, fileName));
-                                        });
-                                    }
-
-                                    return types;
-                                };
-
-                                const foundTypes = findSectionTypes(parsedJson, asset.key);
-
-                                // Pour chaque type trouvé, l'associer à la section correspondante
-                                foundTypes.forEach(type => {
-                                    const section = sectionsData.find(s => s.fileName === type);
-                                    if (section && !section.assignments.includes(asset.key)) {
-                                        section.assignments.push(asset.key);
-                                    }
-                                });
-                            } catch (e) {
-                                // Ignorer les erreurs de parsing JSON
+                                    };
+                                    findSectionTypes(parsedJson);
+                                } catch (e) {}
+                            } else if (asset.key.endsWith('.liquid')) {
+                                // Chercher {% section '...' %} ou {% sections '...' %}
+                                const sectionRegex = /\{%\s*sections?\s*['"]([^'"]+)['"]\s*%\}/g;
+                                let match;
+                                while ((match = sectionRegex.exec(content)) !== null) {
+                                    foundTypesAcrossFile.add(match[1]);
+                                }
                             }
-                        } catch (e) {
-                            // Ignorer les erreurs
-                        }
+
+                            // Pour chaque type trouvé, l'associer à la section correspondante
+                            foundTypesAcrossFile.forEach(type => {
+                                const section = sectionsData.find(s => s.fileName === type);
+                                if (section && !section.assignments.includes(asset.key)) {
+                                    section.assignments.push(asset.key);
+                                }
+                            });
+                        } catch (e) {}
                     }));
 
-                    const jsonProgress = Math.round(40 + ((i + batch.length) / totalJsonFiles) * 55);
-                    controller.enqueue(encoder.encode(sse({ progress: jsonProgress, message: "Scan des assignations..." })));
+                    const scanProgress = Math.round(40 + ((i + batch.length) / totalScanFiles) * 55);
+                    controller.enqueue(encoder.encode(sse({ progress: scanProgress, message: "Scan des assignations..." })));
                 }
 
                 // 6. Retourner les résultats
                 controller.enqueue(encoder.encode(sse({
                     progress: 100,
                     results: sectionsData.map(s => ({
+                        id: s.key,
                         fileName: s.fileName,
                         key: s.key,
                         schemaName: s.schemaName,

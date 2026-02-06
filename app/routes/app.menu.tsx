@@ -303,11 +303,7 @@ export default function AppMenu() {
                 onMarkToReview={() => setReviewStatus(Array.from(selectedKeys), "to_review")}
                 onMarkReviewed={() => setReviewStatus(Array.from(selectedKeys), "reviewed")}
                 onClearReviewStatus={() => clearReviewStatus(Array.from(selectedKeys))}
-                onDelete={() => {
-                    setDeleteTarget({ single: null, ids: Array.from(selectedKeys) });
-                    setDeleteModalOpen(true);
-                }}
-                showDelete={true}
+                showDelete={false}
             />
 
             <BasilicModal isOpen={editModalOpen} onClose={() => setEditModalOpen(false)} title="Editer le menu" footer={<><Button variant="light" onPress={() => setEditModalOpen(false)} className="btn-modal-cancel">Annuler</Button><BasilicButton className="grow" onPress={() => { const fd = new FormData(); fd.append("action", "update"); fd.append("id", editItem?.id!); fd.append("title", editName); fd.append("handle", editHandle); submit(fd, { method: "post" }); }}>Enregistrer</BasilicButton></>}><div className="space-y-4 pt-2"><div><label className="form-label">Nom</label><input value={editName} onChange={(e) => setEditName(e.target.value)} className="form-input" /></div><div><label className="form-label">Handle</label><input value={editHandle} onChange={(e) => setEditHandle(e.target.value)} className="form-input form-input--mono" /></div></div></BasilicModal>

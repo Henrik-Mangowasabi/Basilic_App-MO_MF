@@ -59,7 +59,7 @@ export function SelectionActionBar({
 
             <button
                 onClick={onMarkToReview}
-                className="selection-action-bar__button"
+                className="selection-action-bar__button selection-action-bar__button--to-review"
             >
                 À review
             </button>

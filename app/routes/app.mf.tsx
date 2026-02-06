@@ -10,6 +10,7 @@ import "../styles/basilic-ui.css";
 import { Icons } from "../components/Icons";
 import { AppBrand, DevModeToggle, BasilicButton, BasilicSearch, NavigationTabs, BasilicModal, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "../components/BasilicUI";
 import { useScan } from "../components/ScanProvider";
+import { SelectionActionBar } from "../components/SelectionActionBar";
 
 const TRAD: Record<string, string> = { 'single_line_text_field': 'Texte', 'multi_line_text_field': 'Texte (multi)', 'number_integer': 'Entier', 'number_decimal': 'Décimal', 'boolean': 'Booléen', 'url': 'Url', 'json': 'JSON', 'date': 'Date', 'date_time': 'Date Heure', 'color': 'Couleur', 'weight': 'Poids', 'volume': 'Volume', 'dimension': 'Dimension', 'rating': 'Note', 'money': 'Argent', 'file_reference': 'Fichier', 'product_reference': 'Produit', 'variant_reference': 'Variante', 'collection_reference': 'Collection', 'page_reference': 'Page', 'customer_reference': 'Client', 'metaobject_reference': 'Métaobjet' };
 const translateType = (t: string) => (!t ? '-' : t.startsWith('list.') ? `Liste ${TRAD[t.replace('list.', '')] || t.replace('list.', '')}` : TRAD[t] || t);
@@ -295,7 +296,7 @@ export const action = createRouteAction({
 });
 
 export default function AppMf() {
-    const { domain, mfData, moCount, totalTemplates, mediaCount, menuCount, reviewStatusMap } = useLoaderData<any>();
+    const { domain, mfData, moCount, totalTemplates, mediaCount, menuCount, sectionsCount, reviewStatusMap } = useLoaderData<any>();
     const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[]; generated?: number; assignments?: { type: string; id: string; title: string; handle?: string; status?: string }[] } | null>();
     const submit = useSubmit();
     const fetcher = useFetcher<{ ok: boolean; assignments?: { type: string; id: string; title: string; handle?: string; status?: string }[] }>();
@@ -558,7 +559,7 @@ export default function AppMf() {
                 >
                     Scan Code
                 </BasilicButton><BasilicButton onPress={handleGenerateDescriptions} icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>}>Générer descriptions manquantes</BasilicButton></div></div>
-                <div className="page-nav-row"><NavigationTabs activePath="/app/mf" counts={{ mf: totalCount, mo: moCount, t: totalTemplates, m: mediaCount, menu: menuCount }} /><div style={{ width: '320px' }}><BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" /></div></div>
+                <div className="page-nav-row"><NavigationTabs activePath="/app/mf" counts={{ mf: totalCount, mo: moCount, t: totalTemplates, m: mediaCount, menu: menuCount, sections: sectionsCount }} /><div style={{ width: '320px' }}><BasilicSearch value={search} onValueChange={setSearch} placeholder="Search" /></div></div>
                 
                 {search ? (
                     filteredSearch.length > 0 ? (
@@ -596,24 +597,15 @@ export default function AppMf() {
                 )}
                 </div>
 
-                {selectedKeys.size > 0 && (
-                    <div className="selection-action-bar">
-                        <div className="selection-action-bar__content">
-                            <div className="selection-action-bar__info">
-                                <span className="selection-action-bar__count">{(selectedKeys as any) === "all" ? totalCount : selectedKeys.size} sélectionnés</span>
-                                <button onClick={() => setSelectedKeys(new Set([]))} className="selection-action-bar__close" aria-label="Tout désélectionner">
-                                    <Icons.Close />
-                                </button>
-                            </div>
-                            <div className="selection-action-bar__divider"></div>
-                            <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); fd.append("status", "to_review"); submit(fd, { method: "post" }); }} className="btn-action-bar btn-action-bar--review">À review</Button>
-                            <Button onPress={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); fd.append("status", "reviewed"); submit(fd, { method: "post" }); }} className="btn-action-bar btn-action-bar--reviewed">Review</Button>
-                            <Button onPress={() => { const fd = new FormData(); fd.append("action", "clear_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); submit(fd, { method: "post" }); }} variant="flat" className="btn-action-bar btn-action-bar--reset">Réinitialiser</Button>
-                            <div className="selection-action-bar__divider"></div>
-                            <Button onPress={() => { setPendingDeleteIds(Array.from(selectedKeys).map(k => String(k))); setDeleteModalOpen(true); }} className="btn-action-bar btn-action-bar--delete" startContent={<Icons.Delete />}>supprimer</Button>
-                        </div>
-                    </div>
-                )}
+                <SelectionActionBar
+                    selectedCount={selectedKeys.size}
+                    onClearSelection={() => setSelectedKeys(new Set([]))}
+                    onMarkToReview={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); fd.append("status", "to_review"); submit(fd, { method: "post" }); }}
+                    onMarkReviewed={() => { const fd = new FormData(); fd.append("action", "set_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); fd.append("status", "reviewed"); submit(fd, { method: "post" }); }}
+                    onClearReviewStatus={() => { const fd = new FormData(); fd.append("action", "clear_review_status"); fd.append("ids", JSON.stringify(Array.from(selectedKeys).map(k => String(k)))); submit(fd, { method: "post" }); }}
+                    onDelete={() => { setPendingDeleteIds(Array.from(selectedKeys).map(k => String(k))); setDeleteModalOpen(true); }}
+                    showDelete={true}
+                />
 
                 <BasilicModal isOpen={!!modalData} onClose={() => setModalData(null)} title="Editer le champ" footer={<><Button variant="light" onPress={() => setModalData(null)} className="btn-modal-cancel">Annuler</Button><BasilicButton className="grow" onPress={() => { const fd = new FormData(); fd.append("action", "update"); fd.append("id", modalData.id); fd.append("ownerType", modalData.ownerType); fd.append("namespace", modalData.namespace); fd.append("key", modalData.key); fd.append("name", editName); fd.append("description", editDesc); submit(fd, { method: "post" }); setModalData(null); setToast({ title: "Enregistré", msg: "Modification enregistrée." }); }}>Enregistrer</BasilicButton></>}><div className="space-y-4 pt-2"><div><label htmlFor="mf-name" className="form-label">Titre</label><input id="mf-name" value={editName} onChange={e => setEditName(e.target.value)} className="form-input" /></div><div><label htmlFor="mf-desc" className="form-label">Description</label><textarea id="mf-desc" value={editDesc} onChange={e => setEditDesc(e.target.value)} className="form-textarea" /></div></div></BasilicModal>
                 <BasilicModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} title="Confirmer suppression" footer={<><Button variant="light" onPress={() => setDeleteModalOpen(false)} className="btn-modal-cancel">Annuler</Button><Button onPress={() => { const fd = new FormData(); fd.append("action", "delete"); fd.append("ids", JSON.stringify(pendingDeleteIds)); submit(fd, { method: "post" }); }} className="btn-modal-danger">Confirmer</Button></>}>

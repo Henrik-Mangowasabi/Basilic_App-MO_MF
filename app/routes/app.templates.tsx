@@ -511,7 +511,7 @@ export default function AppTemplates() {
             <Modal
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
-                size="2xl"
+                size="lg"
                 scrollBehavior="inside"
                 classNames={{
                     base: "modal-base",
@@ -603,10 +603,6 @@ export default function AppTemplates() {
                                                                 <div className="resource-card__content">
                                                                     <div className="resource-card__title">
                                                                         {resource.title}
-                                                                    </div>
-                                                                    <div className="resource-card__meta">
-                                                                        ID: {resourceId}
-                                                                        {modalData.template.type === 'product' && resource.status && ` • Status: ${resource.status}`}
                                                                     </div>
                                                                 </div>
                                                                 <div className="resource-card__actions">
