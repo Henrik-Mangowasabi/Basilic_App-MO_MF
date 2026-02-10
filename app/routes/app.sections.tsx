@@ -361,45 +361,31 @@ export default function AppSections() {
                                     Fichiers utilisant cette section
                                 </div>
                             </ModalHeader>
-                            <ModalBody>
+                            <ModalBody className="p-0">
                                 {modalData && (
-                                    <div className="space-y-4">
+                                    <div className="mf-assignments-modal__wrap">
+                                        <div className="mf-assignments-modal__header">
+                                            <div className="mf-assignments-modal__subtitle-row">
+                                                <span className="mf-assignments-modal__subtitle">Assignations</span>
+                                                <span className="mf-assignments-modal__count-pill">
+                                                    {modalData.assignments.length}
+                                                </span>
+                                            </div>
+                                        </div>
                                         {modalData.assignments.length > 0 ? (
-                                            <div className="space-y-2">
-                                                {modalData.assignments.map((assignment, index) => {
-                                                    // Extraire le nom du fichier et le nombre d'occurrences
-                                                    const match = assignment.match(/^(.+?)\s*\((\d+)×\)$/);
-                                                    const fileName = match ? match[1] : assignment;
-                                                    const occurrences = match ? parseInt(match[2]) : 1;
-
-                                                    return (
-                                                        <div
-                                                            key={index}
-                                                            className="resource-card resource-card--active"
-                                                        >
-                                                            <div className="resource-card__content">
-                                                                <div className="resource-card__title">
-                                                                    {fileName}
-                                                                </div>
-                                                                {occurrences > 1 && (
-                                                                    <div className="resource-card__meta">
-                                                                        Utilisé {occurrences} fois dans ce fichier
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <div className="resource-card__actions">
-                                                                <span className="resource-card__badge resource-card__badge--active">
-                                                                    {fileName.startsWith('templates/') ? 'TEMPLATE' : 'SECTION'}
-                                                                </span>
+                                            <div className="mf-assignments-modal__list">
+                                                {modalData.assignments.map((assignment, index) => (
+                                                    <div key={index} className="mf-assignments-modal__card">
+                                                        <div className="mf-assignments-modal__card-body">
+                                                            <div className="mf-assignments-modal__card-name">
+                                                                {assignment}
                                                             </div>
                                                         </div>
-                                                    );
-                                                })}
+                                                    </div>
+                                                ))}
                                             </div>
                                         ) : (
-                                            <div className="modal-empty">
-                                                Aucune assignation trouvée
-                                            </div>
+                                            <p className="mf-assignments-modal__empty">Aucune assignation trouvée.</p>
                                         )}
                                     </div>
                                 )}

@@ -480,16 +480,25 @@ export default function AppMf() {
         switch (key) {
             case "name": return (<div className="mf-cell mf-cell--multi"><span className="mf-text--title">{item.name}</span><span className="mf-text--desc">{item.description || "Aucune description"}</span></div>);
             case "fullKey": return (
-                <div
-                    className="mf-cell mf-cell--key"
-                    onClick={() => {
-                        navigator.clipboard.writeText(item.fullKey);
-                        setToast({ title: "Copié", msg: item.fullKey });
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    title="Cliquer pour copier"
-                >
-                    <span className="mf-text--key">{item.fullKey}</span>
+                <div className="mf-cell mf-cell--key">
+                    <span
+                        className="mf-text--key"
+                        onClick={() => {
+                            navigator.clipboard.writeText(item.fullKey);
+                            setToast({ title: "Copié", msg: item.fullKey });
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        title="Cliquer pour copier"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                navigator.clipboard.writeText(item.fullKey);
+                                setToast({ title: "Copié", msg: item.fullKey });
+                            }
+                        }}
+                    >{item.fullKey}</span>
                 </div>
             );
             case "type": return (<div className="mf-cell mf-cell--type"><span className="mf-chip">{item.typeDisplay}</span></div>);

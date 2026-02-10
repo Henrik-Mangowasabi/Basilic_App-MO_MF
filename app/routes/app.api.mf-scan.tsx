@@ -101,15 +101,21 @@ export const loader = async ({ request }: { request: Request }) => {
                             const key = parts[parts.length - 1];
                             const namespace = parts[0];
 
+                            // Escape regex special characters
+                            const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const escapedFullKey = escapeRegex(fullKey);
+                            const escapedKey = escapeRegex(key);
+                            const escapedNamespace = escapeRegex(namespace);
+
                             // Détection robuste avec regex pour éviter les faux positifs
                             const patterns = [
-                                fullKey,  // clé complète exacte
-                                `metafields\\.${fullKey}`,  // metafields.namespace.key
-                                `metafields\\.${namespace}\\.${key}`,  // pattern complet
-                                `\\["${key}"\\]`,  // ["key"]
-                                `\\['${key}'\\]`,  // ['key']
-                                `metafields\\.get\\('${fullKey}'`,  // metafields.get('...')
-                                `metafields\\.${key}\\b`,  // word boundary après key
+                                escapedFullKey,  // clé complète exacte
+                                `metafields\\.${escapedFullKey}`,  // metafields.namespace.key
+                                `metafields\\.${escapedNamespace}\\.${escapedKey}`,  // pattern complet
+                                `\\["${escapedKey}"\\]`,  // ["key"]
+                                `\\['${escapedKey}'\\]`,  // ['key']
+                                `metafields\\.get\\('${escapedFullKey}'`,  // metafields.get('...')
+                                `metafields\\.${escapedKey}\\b`,  // word boundary après key
                             ];
 
                             const regex = new RegExp(patterns.join('|'), 'i');

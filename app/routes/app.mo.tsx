@@ -536,16 +536,25 @@ export default function AppMo() {
         switch (columnKey) {
             case "name": return (<div className="mf-cell mf-cell--multi"><span className="mf-text--title">{item.name}</span>{item.description && <span className="mf-text--desc">{item.description}</span>}</div>);
             case "fullKey": return (
-                <div
-                    className="mf-cell mf-cell--key"
-                    onClick={() => {
-                        navigator.clipboard.writeText(item.type);
-                        setToast({ title: "Copié", msg: item.type });
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    title="Cliquer pour copier"
-                >
-                    <span className="mf-text--key">{item.type}</span>
+                <div className="mf-cell mf-cell--key">
+                    <span
+                        className="mf-text--key"
+                        onClick={() => {
+                            navigator.clipboard.writeText(item.type);
+                            setToast({ title: "Copié", message: item.type });
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        title="Cliquer pour copier"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                navigator.clipboard.writeText(item.type);
+                                setToast({ title: "Copié", message: item.type });
+                            }
+                        }}
+                    >{item.type}</span>
                 </div>
             );
             case "fields": return (<div className="mf-cell mf-cell--type"><div className="mf-chip cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => { setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); }} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); } }}>{item.fieldsCount} Champs</div></div>);
