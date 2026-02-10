@@ -37,7 +37,7 @@ export const loader = async ({ request }: { request: Request }) => {
     );
     const assetsJson = await assetsRes.json();
     const allAssets = (assetsJson.assets || []) as { key: string }[];
-    const scannableAssets = allAssets.filter(a => 
+    const scannableAssets = allAssets.filter(a =>
         (a.key.endsWith('.liquid') || a.key.endsWith('.json')) &&
         !a.key.includes('node_modules')
     );
@@ -49,8 +49,11 @@ export const loader = async ({ request }: { request: Request }) => {
     const stream = new ReadableStream({
         async start(controller) {
             try {
+                console.log(`[MENU-SCAN] Starting scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
+                console.log(`[MENU-SCAN] Total menus: ${menuHandles.length}, Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
                 const batchSize = 10;
+                let assetsWithContent = 0;
                 for (let i = 0; i < scannableAssets.length; i += batchSize) {
                     const batch = scannableAssets.slice(i, i + batchSize);
                     await Promise.all(batch.map(async (asset) => {
@@ -62,6 +65,7 @@ export const loader = async ({ request }: { request: Request }) => {
                             const json = await res.json();
                             const content = json.asset?.value || "";
                             if (!content) return;
+                            assetsWithContent++;
 
                             menuHandles.forEach((handle) => {
                                 // Recherche large : guillemets ou après un point
@@ -75,9 +79,12 @@ export const loader = async ({ request }: { request: Request }) => {
                     controller.enqueue(encoder.encode(sse({ progress })));
                     await new Promise(r => setTimeout(r, 50));
                 }
+                console.log(`[MENU-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Menus found: ${menusInCode.size}`);
+                console.log(`[MENU-SCAN] Results:`, Array.from(menusInCode).slice(0, 10));
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(menusInCode) })));
             } catch (e) {
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(menusInCode) })));
+                console.error(`[MENU-SCAN] Fatal error:`, e);
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(menusInCode), error: String(e) })));
             } finally {
                 controller.close();
             }

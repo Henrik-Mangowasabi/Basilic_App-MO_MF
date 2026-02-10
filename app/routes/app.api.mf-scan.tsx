@@ -18,15 +18,17 @@ export const loader = async ({ request }: { request: Request }) => {
     const stream = new ReadableStream({
         async start(controller) {
             try {
+                console.log(`[MF-SCAN] Starting scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
                 controller.enqueue(encoder.encode(sse({ progress: 1, message: "Initialisation..." })));
-                
+
                 const mfKeys: string[] = [];
                 const ownerTypes = ["PRODUCT", "PRODUCTVARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
-                
+
                 // 1. Récupération des clés à l'intérieur du stream pour éviter le timeout
                 for (let idx = 0; idx < ownerTypes.length; idx++) {
                     const ownerType = ownerTypes[idx];
                     let cursor: string | null = null;
+                    let keysForType = 0;
                     try {
                         for (;;) {
                             const res = await admin.graphql(
@@ -43,28 +45,39 @@ export const loader = async ({ request }: { request: Request }) => {
                             if (data?.nodes) {
                                 data.nodes.forEach((n: { namespace: string; key: string }) => {
                                     mfKeys.push(`${n.namespace}.${n.key}`);
+                                    keysForType++;
                                 });
                             }
                             if (!data?.pageInfo?.hasNextPage) break;
                             cursor = data.pageInfo.endCursor;
                         }
-                    } catch (e) {}
-                    const keyProgress = Math.round(((idx + 1) / ownerTypes.length) * 10); // 10% max pour les clés
-                    controller.enqueue(encoder.encode(sse({ progress: keyProgress, message: `Récupération des clés ${ownerType}...` })));
+                    } catch (e) {
+                        console.error(`[MF-SCAN] Error fetching keys for ${ownerType}:`, e);
+                    }
+                    console.log(`[MF-SCAN] Owner type ${ownerType}: ${keysForType} keys. Total so far: ${mfKeys.length}`);
+                    const keyProgress = Math.round(((idx + 1) / ownerTypes.length) * 10);
+                    controller.enqueue(encoder.encode(sse({ progress: keyProgress, message: `Récupération des clés ${ownerType}... (${mfKeys.length} total)` })));
                 }
+                console.log(`[MF-SCAN] Total metafield keys fetched: ${mfKeys.length}`);
 
                 // 2. Récupération des assets
                 const assetsRes = await fetch(`https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`, {
                     headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
                 });
+                if (!assetsRes.ok) {
+                    console.error(`[MF-SCAN] Failed to fetch assets: ${assetsRes.status}`);
+                    throw new Error(`Assets API returned ${assetsRes.status}`);
+                }
                 const assetsJson = await assetsRes.json();
                 const allAssets = (assetsJson.assets || []) as { key: string }[];
-                const scannableAssets = allAssets.filter(a => 
+                const scannableAssets = allAssets.filter(a =>
                     (a.key.endsWith('.liquid') || a.key.endsWith('.json')) && !a.key.includes('node_modules')
                 );
+                console.log(`[MF-SCAN] Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
 
                 const mfInCode = new Set<string>();
                 const batchSize = 10;
+                let assetsWithContent = 0;
 
                 // 3. Scan des assets
                 for (let i = 0; i < scannableAssets.length; i += batchSize) {
@@ -94,9 +107,9 @@ export const loader = async ({ request }: { request: Request }) => {
                         }
 
                         if (!content) {
-                            console.warn(`Empty content for asset: ${asset.key}`);
                             return;
                         }
+                        assetsWithContent++;
 
                         mfKeys.forEach((fullKey) => {
                             if (mfInCode.has(fullKey)) return;
@@ -132,9 +145,12 @@ export const loader = async ({ request }: { request: Request }) => {
                     controller.enqueue(encoder.encode(sse({ progress: scanProgress, status: `Scanned ${i + batch.length}/${scannableAssets.length} files...` })));
                 }
 
+                console.log(`[MF-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Metafields found in code: ${mfInCode.size}`);
+                console.log(`[MF-SCAN] Results:`, Array.from(mfInCode).slice(0, 10));
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(mfInCode) })));
             } catch (e) {
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: [] })));
+                console.error(`[MF-SCAN] Fatal error:`, e);
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: [], error: String(e) })));
             } finally {
                 controller.close();
             }

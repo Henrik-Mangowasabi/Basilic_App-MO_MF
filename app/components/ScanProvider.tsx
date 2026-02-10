@@ -146,8 +146,10 @@ export function ScanProvider({ children }: ScanProviderProps) {
                     progressRef.current[e.key as keyof typeof progressRef.current] = p;
                     updateProgress();
                 });
+                console.log(`[SCAN-PROVIDER] Endpoint ${e.url} returned ${Array.isArray(res) ? res.length : 0} items`);
                 e.setter(res);
                 sessionStorage.setItem(e.storage, JSON.stringify(res));
+                console.log(`[SCAN-PROVIDER] Stored ${e.key} in sessionStorage:`, Array.isArray(res) ? res.slice(0, 5) : res);
                 return { key: e.key, success: true };
             }));
 
@@ -240,6 +242,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
 
 async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: number) => void): Promise<any[]> {
     try {
+        console.log(`[SCAN-ENDPOINT] Fetching ${url}...`);
         const response = await fetch(url, { signal });
 
         // Check for authentication errors
@@ -263,6 +266,7 @@ async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: nu
         let results: string[] = [];
         let buffer = "";
         let receivedResults = false;
+        let lineCount = 0;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -275,12 +279,14 @@ async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: nu
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (!trimmed || !trimmed.startsWith("data: ")) continue;
+                lineCount++;
                 try {
                     const data = JSON.parse(trimmed.slice(6));
                     if (data.progress !== undefined) onProgress(data.progress);
                     if (data.results) {
                         results = Array.isArray(data.results) ? data.results : [];
                         receivedResults = true;
+                        console.log(`[SCAN-ENDPOINT] Received results from ${url}: ${results.length} items`, results.slice(0, 3));
                     }
                     if (data.error) {
                         console.warn(`Stream error from ${url}:`, data.error);
@@ -294,7 +300,7 @@ async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: nu
         }
 
         if (!receivedResults) {
-            console.warn(`No results received from ${url}`);
+            console.warn(`No results received from ${url}. Lines processed: ${lineCount}`);
             return [];
         }
 

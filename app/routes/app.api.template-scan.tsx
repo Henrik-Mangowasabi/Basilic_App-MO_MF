@@ -53,7 +53,10 @@ export const loader = async ({ request }: { request: Request }) => {
     const stream = new ReadableStream({
         async start(controller) {
             try {
+                console.log(`[TEMPLATE-SCAN] Starting scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
+                console.log(`[TEMPLATE-SCAN] Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}, Templates: ${templateSuffixes.length}`);
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
+                let assetsWithContent = 0;
                 for (let i = 0; i < scannableAssets.length; i += batchSize) {
                     const batch = scannableAssets.slice(i, i + batchSize);
                     await Promise.all(
@@ -67,6 +70,7 @@ export const loader = async ({ request }: { request: Request }) => {
                                 const assetData: { asset?: { value?: string } } = await response.json();
                                 const content = assetData.asset?.value || "";
                                 if (!content) return;
+                                assetsWithContent++;
 
                                 templateSuffixes.forEach((suffix: string) => {
                                     if (content.includes(`"${suffix}"`) || content.includes(`'${suffix}'`)) {
@@ -80,8 +84,11 @@ export const loader = async ({ request }: { request: Request }) => {
                     const progress = Math.min(99, Math.round((batchIndex / totalBatches) * 100));
                     controller.enqueue(encoder.encode(sse({ progress })));
                 }
+                console.log(`[TEMPLATE-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Templates found: ${templatesInCode.size}`);
+                console.log(`[TEMPLATE-SCAN] Results:`, Array.from(templatesInCode).slice(0, 10));
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(templatesInCode) })));
             } catch (e) {
+                console.error(`[TEMPLATE-SCAN] Fatal error:`, e);
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(templatesInCode), error: String(e) })));
             } finally {
                 controller.close();

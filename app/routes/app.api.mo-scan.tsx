@@ -51,8 +51,12 @@ export const loader = async ({ request }: { request: Request }) => {
     const stream = new ReadableStream({
         async start(controller) {
             try {
+                console.log(`[MO-SCAN] Starting metaobject scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
+                console.log(`[MO-SCAN] Metaobject types fetched: ${moTypes.length}`, moTypes.slice(0, 5));
+                console.log(`[MO-SCAN] Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
                 const batchSize = 10;
+                let assetsWithContent = 0;
                 for (let i = 0; i < scannableAssets.length; i += batchSize) {
                     const batch = scannableAssets.slice(i, i + batchSize);
                     await Promise.all(batch.map(async (asset) => {
@@ -64,6 +68,7 @@ export const loader = async ({ request }: { request: Request }) => {
                             const json = await res.json();
                             const content = json.asset?.value || "";
                             if (!content) return;
+                            assetsWithContent++;
 
                             moTypes.forEach(type => {
                                 if (metaobjectsInCode.has(type)) return;
@@ -89,9 +94,12 @@ export const loader = async ({ request }: { request: Request }) => {
                     controller.enqueue(encoder.encode(sse({ progress, status: `Scanned ${i + batch.length}/${scannableAssets.length}...` })));
                     await new Promise(r => setTimeout(r, 50));
                 }
+                console.log(`[MO-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Metaobjects found: ${metaobjectsInCode.size}`);
+                console.log(`[MO-SCAN] Results:`, Array.from(metaobjectsInCode).slice(0, 10));
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metaobjectsInCode) })));
             } catch (e) {
-                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metaobjectsInCode) })));
+                console.error(`[MO-SCAN] Fatal error:`, e);
+                controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metaobjectsInCode), error: String(e) })));
             } finally {
                 controller.close();
             }

@@ -23,6 +23,7 @@ export const loader = async ({ request }: { request: Request }) => {
     const stream = new ReadableStream({
         async start(controller) {
             try {
+                console.log(`[SECTION-SCAN] Starting scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
                 controller.enqueue(encoder.encode(sse({ progress: 1, message: "Récupération des assets..." })));
 
                 // 1. Lister TOUS les assets du thème via REST API
@@ -30,6 +31,10 @@ export const loader = async ({ request }: { request: Request }) => {
                     `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
                     { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
                 );
+                if (!assetsRes.ok) {
+                    console.error(`[SECTION-SCAN] Failed to fetch assets: ${assetsRes.status}`);
+                    throw new Error(`Assets API returned ${assetsRes.status}`);
+                }
                 const assetsJson = await assetsRes.json();
                 const allAssets = (assetsJson.assets || []) as { key: string }[];
 
@@ -38,6 +43,7 @@ export const loader = async ({ request }: { request: Request }) => {
                     /^sections\//i.test(a.key) && a.key.endsWith('.liquid')
                 );
 
+                console.log(`[SECTION-SCAN] Total assets: ${allAssets.length}, Section files: ${sectionAssets.length}`);
                 controller.enqueue(encoder.encode(sse({ progress: 5, message: `${sectionAssets.length} sections trouvées...` })));
 
                 // 3. Pour chaque section, récupérer le contenu et extraire le nom du schema
@@ -197,18 +203,22 @@ export const loader = async ({ request }: { request: Request }) => {
                 }
 
                 // 6. Retourner les résultats
+                console.log(`[SECTION-SCAN] Scan complete. Total sections found: ${sectionsData.length}`);
+                const results = sectionsData.map(s => ({
+                    id: s.key,
+                    fileName: s.fileName,
+                    key: s.key,
+                    schemaName: s.schemaName,
+                    assignmentCount: s.assignments.length,
+                    assignments: s.assignments
+                }));
+                console.log(`[SECTION-SCAN] Results:`, results.slice(0, 5));
                 controller.enqueue(encoder.encode(sse({
                     progress: 100,
-                    results: sectionsData.map(s => ({
-                        id: s.key,
-                        fileName: s.fileName,
-                        key: s.key,
-                        schemaName: s.schemaName,
-                        assignmentCount: s.assignments.length,
-                        assignments: s.assignments
-                    }))
+                    results
                 })));
             } catch (e) {
+                console.error(`[SECTION-SCAN] Fatal error:`, e);
                 controller.enqueue(encoder.encode(sse({
                     progress: 100,
                     results: [],
