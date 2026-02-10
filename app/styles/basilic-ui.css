@@ -843,6 +843,18 @@ body {
     border-radius: var(--radius-sm);
 }
 
+/* Resources List Container - Scrollable */
+.resources-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    max-height: 55vh;
+    padding-right: 8px;
+    flex: 1;
+    min-height: 0;
+}
+
 .resource-card__badge--active {
     background: rgba(75, 185, 97, 0.1);
     color: var(--color-primary-dark);
@@ -2308,6 +2320,8 @@ button.ui-btn.btn-modal-danger:hover,
     flex-direction: column;
     gap: 10px;
     flex: 1;
+    max-height: 55vh;
+    min-height: 0;
 }
 
 /* Field Item */
@@ -2494,6 +2508,11 @@ button.ui-btn.btn-modal-danger:hover,
     display: flex;
     flex-direction: column;
     gap: 12px;
+    overflow-y: auto;
+    max-height: 55vh;
+    padding-right: 8px;
+    flex: 1;
+    min-height: 0;
 }
 
 .mo-entry-item {

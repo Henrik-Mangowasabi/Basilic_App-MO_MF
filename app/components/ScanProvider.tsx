@@ -27,6 +27,7 @@ interface ScanContextType {
     sectionResults: SectionScanResult[];
     startScan: () => void;
     hasScanRun: boolean;
+    scanError: string | null;
 }
 
 const ScanContext = createContext<ScanContextType | null>(null);
@@ -45,7 +46,8 @@ export function ScanProvider({ children }: ScanProviderProps) {
     const [isScanning, setIsScanning] = useState(false);
     const [scanProgress, setScanProgress] = useState(0);
     const [hasScanRun, setHasScanRun] = useState(false);
-    
+    const [scanError, setScanError] = useState<string | null>(null);
+
     const [mfResults, setMfResults] = useState<Set<string>>(new Set());
     const [moResults, setMoResults] = useState<Set<string>>(new Set());
     const [templateResults, setTemplateResults] = useState<Set<string>>(new Set());
@@ -89,11 +91,12 @@ export function ScanProvider({ children }: ScanProviderProps) {
         setScanProgress(0);
         progressRef.current = { mf: 0, mo: 0, tpl: 0, menu: 0, sections: 0 };
 
-        const basePath = window.location.pathname.includes('/app') 
+        const basePath = window.location.pathname.includes('/app')
             ? window.location.pathname.split('/app')[0] + '/app'
             : '/app';
 
         try {
+            setScanError(null);
             const endpoints = [
                 { url: `${basePath}/api/mf-scan`, key: 'mf', setter: (res: any) => setMfResults(new Set(res)), storage: MF_RESULTS_KEY },
                 { url: `${basePath}/api/mo-scan`, key: 'mo', setter: (res: any) => setMoResults(new Set(res)), storage: MO_RESULTS_KEY },
@@ -103,20 +106,33 @@ export function ScanProvider({ children }: ScanProviderProps) {
             ];
 
             const results = await Promise.all(endpoints.map(async (e) => {
-                const res = await scanEndpoint(e.url, abort.signal, (p) => {
-                    progressRef.current[e.key as keyof typeof progressRef.current] = p;
-                    updateProgress();
-                });
-                e.setter(res);
-                sessionStorage.setItem(e.storage, JSON.stringify(res));
-                return res;
+                try {
+                    const res = await scanEndpoint(e.url, abort.signal, (p) => {
+                        progressRef.current[e.key as keyof typeof progressRef.current] = p;
+                        updateProgress();
+                    });
+                    e.setter(res);
+                    sessionStorage.setItem(e.storage, JSON.stringify(res));
+                    return res;
+                } catch (err) {
+                    console.error(`Endpoint ${e.url} failed:`, err);
+                    throw err;
+                }
             }));
 
             sessionStorage.setItem(SCAN_DONE_KEY, "true");
             setHasScanRun(true);
+            // Ajouter un délai court avant le reload pour s'assurer que le sessionStorage est bien synchronisé
+            await new Promise(r => setTimeout(r, 500));
             window.location.reload();
         } catch (e) {
-            if ((e as Error).name !== "AbortError") console.error("Scan failed", e);
+            if ((e as Error).name !== "AbortError") {
+                const errorMsg = String(e);
+                console.error("Scan failed", e);
+                setScanError(errorMsg);
+                // Effacer les résultats partiels en cas d'erreur
+                sessionStorage.removeItem(SCAN_DONE_KEY);
+            }
         } finally {
             setIsScanning(false);
             scanAbortRef.current = null;
@@ -137,7 +153,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
     }, [runScan]);
 
     return (
-        <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, templateResults, menuResults, sectionResults, startScan, hasScanRun }}>
+        <ScanContext.Provider value={{ isScanning, scanProgress, mfResults, moResults, templateResults, menuResults, sectionResults, startScan, hasScanRun, scanError }}>
             {children}
             {isScanning && (
                 <div className="loading-overlay">
@@ -154,14 +170,53 @@ export function ScanProvider({ children }: ScanProviderProps) {
                     </div>
                 </div>
             )}
+            {scanError && (
+                <div className="loading-overlay">
+                    <div className="scan-modal">
+                        <div className="scan-modal__content">
+                            <div className="scan-modal__title" style={{ color: '#F43F5E' }}>Erreur lors du scan</div>
+                            <div className="scan-modal__subtitle">{scanError}</div>
+                            <button
+                                onClick={() => setScanError(null)}
+                                style={{
+                                    marginTop: '16px',
+                                    padding: '8px 16px',
+                                    backgroundColor: '#F43F5E',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Fermer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </ScanContext.Provider>
     );
 }
 
-async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: number) => void): Promise<string[]> {
+async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: number) => void): Promise<any[]> {
     try {
         const response = await fetch(url, { signal });
-        if (!response.ok || !response.body) return [];
+
+        // Check for authentication errors
+        if (response.status === 401 || response.status === 302) {
+            console.error(`Authentication error on ${url}: ${response.status}`);
+            throw new Error(`Authentication failed (${response.status})`);
+        }
+
+        if (!response.ok) {
+            console.error(`Endpoint error ${url}: ${response.status}`);
+            return [];
+        }
+
+        if (!response.body) {
+            console.error(`No response body from ${url}`);
+            return [];
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -183,11 +238,13 @@ async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: nu
                     const data = JSON.parse(trimmed.slice(6));
                     if (data.progress !== undefined) onProgress(data.progress);
                     if (data.results) results = data.results;
+                    if (data.error) console.warn(`Stream error from ${url}:`, data.error);
                 } catch (e) {}
             }
         }
         return results;
     } catch (e) {
+        console.error(`Scan endpoint error for ${url}:`, e);
         return [];
     }
 }

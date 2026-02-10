@@ -58,27 +58,26 @@ export const loader = async ({ request }: { request: Request }) => {
     const assets = assetsJson.assets || [];
     const templateAssets = assets.filter((a: { key: string }) => a.key.startsWith('templates/') && a.key.endsWith('.json'));
 
-    const templateData: Record<string, any[]> = { product: [], collection: [], page: [], blog: [], article: [] };
+    const templateData: Record<string, any[]> = { product: [], collection: [], page: [], blog: [], article: [], other: [] };
 
     for (const asset of templateAssets) {
         const parts = asset.key.replace('templates/', '').replace('.json', '').split('.');
         const type = parts[0];
         const suffix = parts.length > 1 ? parts.slice(1).join('.') : null;
-        if (templateData[type]) {
-            templateData[type].push({ 
-                id: asset.key, 
-                key: asset.key, 
-                name: suffix ? `${type}.${suffix}` : `${type} (defaut template)`, 
-                suffix: suffix, 
-                type: type, 
-                updated_at: asset.updated_at, 
-                count: 0,
+        const targetType = ['product', 'collection', 'page', 'blog', 'article'].includes(type) ? type : 'other';
+        templateData[targetType].push({
+            id: asset.key,
+            key: asset.key,
+            name: suffix ? `${type}.${suffix}` : `${type} (defaut template)`,
+            suffix: suffix,
+            type: type,
+            updated_at: asset.updated_at,
+            count: 0,
             countActive: 0,
             countInactive: 0,
             resourcesActive: [],
             resourcesInactive: []
-            });
-        }
+        });
     }
 
     // Sort: default first
@@ -148,17 +147,29 @@ export const loader = async ({ request }: { request: Request }) => {
     };
 
     Object.entries(templateData).forEach(([type, templates]) => {
+        if (type === 'other') {
+            // Les templates "other" ne sont pas assignés à des ressources
+            templates.forEach(t => {
+                t.count = 0;
+                t.countActive = 0;
+                t.countInactive = 0;
+                t.resourcesActive = [];
+                t.resourcesInactive = [];
+            });
+            return;
+        }
+
         const resourceNodes = globalNodes[type] || [];
         templates.forEach(t => {
             // Comparer les suffixes : null ou chaîne vide = template par défaut
             const templateSuffix = t.suffix || null;
-            
+
             const matchingNodes = resourceNodes.filter((n: { suffix: string | null, status?: string, id?: string, title?: string, blogId?: string }) => {
                 const nodeSuffix = n.suffix || null;
                 if (templateSuffix === null && nodeSuffix === null) return true;
                 return templateSuffix === nodeSuffix;
             });
-            
+
             if (type === 'product') {
                 // Produits actifs (status === 'ACTIVE')
                 const activeResources = matchingNodes.filter((n: { status?: string }) => n.status === 'ACTIVE');
@@ -168,7 +179,7 @@ export const loader = async ({ request }: { request: Request }) => {
                     title: n.title || 'Sans titre',
                     status: n.status || ''
                 }));
-                
+
                 // Produits inactifs (status !== 'ACTIVE' ou null)
                 const inactiveResources = matchingNodes.filter((n: { status?: string }) => n.status !== 'ACTIVE');
                 t.countInactive = inactiveResources.length;
@@ -177,14 +188,14 @@ export const loader = async ({ request }: { request: Request }) => {
                     title: n.title || 'Sans titre',
                     status: n.status || ''
                 }));
-                
+
                 t.count = t.countActive + t.countInactive;
             } else {
                 // Pour les autres types, tout est considéré comme "actif" (pas de distinction status)
                 t.count = matchingNodes.length;
                 t.countActive = t.count;
                 t.countInactive = 0;
-                
+
                 t.resourcesActive = matchingNodes.map((n: { id?: string, title?: string, blogId?: string }) => ({
                     id: n.id || '',
                     title: n.title || 'Sans titre',
@@ -426,12 +437,13 @@ export default function AppTemplates() {
         return allItems.filter((d: TemplateItem) => norm(d.name).includes(s) || norm(d.key).includes(s) || norm(d.type).includes(s));
     }, [search, allItems]);
 
-    const sections = [ 
-        { type: 'product', label: 'Produits', icon: <Icons.Products /> }, 
-        { type: 'collection', label: 'Collections', icon: <Icons.Collections /> }, 
-        { type: 'page', label: 'Pages', icon: <Icons.Pages /> }, 
-        { type: 'blog', label: 'Blogs', icon: <Icons.Blogs /> }, 
-        { type: 'article', label: 'Articles', icon: <Icons.Articles /> } 
+    const sections = [
+        { type: 'product', label: 'Produits', icon: <Icons.Products /> },
+        { type: 'collection', label: 'Collections', icon: <Icons.Collections /> },
+        { type: 'page', label: 'Pages', icon: <Icons.Pages /> },
+        { type: 'blog', label: 'Blogs', icon: <Icons.Blogs /> },
+        { type: 'article', label: 'Articles', icon: <Icons.Articles /> },
+        { type: 'other', label: 'Autres Templates', icon: <Icons.Search /> }
     ];
 
     return (
@@ -596,7 +608,7 @@ export default function AppTemplates() {
                                     return (
                                         <div className="space-y-4">
                                             {resources.length > 0 ? (
-                                                <div className="space-y-2">
+                                                <div className="resources-list custom-scrollbar">
                                                     {resources.map((resource) => {
                                                         const resourceId = resource.id.split('/').pop();
                                                         const resourceUrl = getResourceUrl(resource, modalData.template.type);
