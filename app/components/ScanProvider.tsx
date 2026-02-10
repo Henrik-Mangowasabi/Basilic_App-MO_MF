@@ -105,7 +105,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
                 { url: `${basePath}/api/section-scan`, key: 'sections', setter: (res: any) => setSectionResults(res), storage: SECTION_RESULTS_KEY }
             ];
 
-            const results = await Promise.all(endpoints.map(async (e) => {
+            await Promise.all(endpoints.map(async (e) => {
                 try {
                     const res = await scanEndpoint(e.url, abort.signal, (p) => {
                         progressRef.current[e.key as keyof typeof progressRef.current] = p;
@@ -113,7 +113,6 @@ export function ScanProvider({ children }: ScanProviderProps) {
                     });
                     e.setter(res);
                     sessionStorage.setItem(e.storage, JSON.stringify(res));
-                    return res;
                 } catch (err) {
                     console.error(`Endpoint ${e.url} failed:`, err);
                     throw err;
@@ -122,9 +121,6 @@ export function ScanProvider({ children }: ScanProviderProps) {
 
             sessionStorage.setItem(SCAN_DONE_KEY, "true");
             setHasScanRun(true);
-            // Ajouter un délai court avant le reload pour s'assurer que le sessionStorage est bien synchronisé
-            await new Promise(r => setTimeout(r, 500));
-            window.location.reload();
         } catch (e) {
             if ((e as Error).name !== "AbortError") {
                 const errorMsg = String(e);
@@ -141,11 +137,11 @@ export function ScanProvider({ children }: ScanProviderProps) {
 
     // Scan auto au premier load si pas fait
     useEffect(() => {
-        if (sessionStorage.getItem(SCAN_DONE_KEY) !== "true") {
-            const t = setTimeout(runScan, 1000);
+        if (sessionStorage.getItem(SCAN_DONE_KEY) !== "true" && !isScanning) {
+            const t = setTimeout(runScan, 500);
             return () => clearTimeout(t);
         }
-    }, [runScan]);
+    }, [runScan, isScanning]);
 
     const startScan = useCallback(() => {
         sessionStorage.removeItem(SCAN_DONE_KEY);

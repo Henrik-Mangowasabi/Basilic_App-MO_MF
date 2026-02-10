@@ -2320,7 +2320,7 @@ button.ui-btn.btn-modal-danger:hover,
     flex-direction: column;
     gap: 10px;
     flex: 1;
-    max-height: 55vh;
+    max-height: 30vh;
     min-height: 0;
 }
 
