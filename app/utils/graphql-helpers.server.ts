@@ -228,8 +228,7 @@ export async function getActiveThemeId(admin: AdminGraphQL): Promise<string | nu
 }
 
 /**
- * Compte les sections (fichiers sections/*.liquid) avec cache
- * Nécessite l'accès REST aux assets du thème
+ * Compte les sections (fichiers sections/*.liquid) avec cache via GraphQL
  */
 export async function getSectionsCount(admin: AdminGraphQL, shop: string, accessToken: string, useCache = true): Promise<number> {
     try {
@@ -242,20 +241,36 @@ export async function getSectionsCount(admin: AdminGraphQL, shop: string, access
         const themeId = await getActiveThemeId(admin);
         if (!themeId) return 0;
 
-        // Récupérer les assets via REST API
-        const assetsRes = await fetch(`https://${shop}/admin/api/2024-10/themes/${themeId}/assets.json`, {
-            headers: { "X-Shopify-Access-Token": accessToken, "Content-Type": "application/json" }
-        });
+        // Récupérer tous les assets via GraphQL (avec pagination complète)
+        let sectionsCount = 0;
+        let hasNextPage = true;
+        let cursor: string | null = null;
 
-        if (!assetsRes.ok) return 0;
+        while (hasNextPage) {
+            const query = `
+                query GetThemeAssets($themeId: ID!, $after: String) {
+                    theme(id: $themeId) {
+                        assets(first: 250, after: $after) {
+                            pageInfo { hasNextPage endCursor }
+                            nodes { key }
+                        }
+                    }
+                }
+            `;
+            const res = await admin.graphql(query, {
+                variables: { themeId: `gid://shopify/Theme/${themeId}`, after: cursor }
+            });
+            const json: any = await res.json();
+            const assets = json.data?.theme?.assets?.nodes || [];
+            const pageInfo = json.data?.theme?.assets?.pageInfo || {};
 
-        const assetsJson = await assetsRes.json();
-        const assets = assetsJson.assets || [];
+            sectionsCount += assets.filter((a: { key: string }) =>
+                a.key.startsWith('sections/') && a.key.endsWith('.liquid')
+            ).length;
 
-        // Compter les fichiers sections/*.liquid
-        const sectionsCount = assets.filter((a: { key: string }) =>
-            a.key.startsWith('sections/') && a.key.endsWith('.liquid')
-        ).length;
+            hasNextPage = pageInfo.hasNextPage || false;
+            cursor = pageInfo.endCursor || null;
+        }
 
         if (useCache) {
             await setInCache(shop, 'sectionsCount', sectionsCount);
@@ -268,8 +283,7 @@ export async function getSectionsCount(admin: AdminGraphQL, shop: string, access
 }
 
 /**
- * Compte les templates (fichiers templates/*.json) avec cache
- * Nécessite l'accès REST aux assets du thème
+ * Compte les templates (fichiers templates/*.json) avec cache via GraphQL
  */
 export async function getTemplatesCount(admin: AdminGraphQL, shop: string, accessToken: string, useCache = true): Promise<number> {
     try {
@@ -282,20 +296,36 @@ export async function getTemplatesCount(admin: AdminGraphQL, shop: string, acces
         const themeId = await getActiveThemeId(admin);
         if (!themeId) return 0;
 
-        // Récupérer les assets via REST API
-        const assetsRes = await fetch(`https://${shop}/admin/api/2024-10/themes/${themeId}/assets.json`, {
-            headers: { "X-Shopify-Access-Token": accessToken, "Content-Type": "application/json" }
-        });
+        // Récupérer tous les assets via GraphQL (avec pagination complète)
+        let templatesCount = 0;
+        let hasNextPage = true;
+        let cursor: string | null = null;
 
-        if (!assetsRes.ok) return 0;
+        while (hasNextPage) {
+            const query = `
+                query GetThemeAssets($themeId: ID!, $after: String) {
+                    theme(id: $themeId) {
+                        assets(first: 250, after: $after) {
+                            pageInfo { hasNextPage endCursor }
+                            nodes { key }
+                        }
+                    }
+                }
+            `;
+            const res = await admin.graphql(query, {
+                variables: { themeId: `gid://shopify/Theme/${themeId}`, after: cursor }
+            });
+            const json: any = await res.json();
+            const assets = json.data?.theme?.assets?.nodes || [];
+            const pageInfo = json.data?.theme?.assets?.pageInfo || {};
 
-        const assetsJson = await assetsRes.json();
-        const assets = assetsJson.assets || [];
+            templatesCount += assets.filter((a: { key: string }) =>
+                a.key.startsWith('templates/') && a.key.endsWith('.json')
+            ).length;
 
-        // Compter les fichiers templates/*.json
-        const templatesCount = assets.filter((a: { key: string }) =>
-            a.key.startsWith('templates/') && a.key.endsWith('.json')
-        ).length;
+            hasNextPage = pageInfo.hasNextPage || false;
+            cursor = pageInfo.endCursor || null;
+        }
 
         if (useCache) {
             await setInCache(shop, 'templatesCount', templatesCount);

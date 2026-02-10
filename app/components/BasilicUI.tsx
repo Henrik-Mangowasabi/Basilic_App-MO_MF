@@ -213,6 +213,7 @@ export const BasilicModal = ({
       onClose={onClose}
       size={size}
       hideCloseButton={false}
+      scrollBehavior="inside"
     >
       <ModalContent>
         {title && <ModalHeader>{title}</ModalHeader>}

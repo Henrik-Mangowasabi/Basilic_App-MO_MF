@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useLoaderData, useLocation, useActionData } from "react-router";
 import { authenticate, apiVersion } from "../shopify.server";
 import db from "../db.server";
-import { getMetaobjectCount, getMetafieldCount, getMediaCount, getMenuCount, getSectionsCount } from "../utils/graphql-helpers.server";
+import { getMetaobjectCount, getMetafieldCount, getMediaCount, getMenuCount, getSectionsCount, getTemplatesCount } from "../utils/graphql-helpers.server";
 import { getReviewStatusMap } from "../utils/reviewStatus.server";
 import { createRouteAction } from "../utils/createRouteAction";
 import "../styles/metafields-table.css";
@@ -196,22 +196,20 @@ export const loader = async ({ request }: { request: Request }) => {
     });
 
     // 4. Counts - OPTIMISATION: Utiliser le cache et paralléliser
-    const managedTypes = ['product', 'collection', 'page', 'blog', 'article'];
-    const totalTemplatesCount = managedTypes.reduce((acc, type) => acc + (templateData[type]?.length || 0), 0);
-    
     const shopDomain = session.shop;
-    
+
     // OPTIMISATION: Tous les counts en parallèle avec cache
-    const [moCount, mfCount, mediaCount, menuCount, sectionsCount] = await Promise.all([
+    const [moCount, mfCount, mediaCount, menuCount, templatesCount, sectionsCount] = await Promise.all([
         getMetaobjectCount(admin, shopDomain),
         getMetafieldCount(admin, shopDomain),
         getMediaCount(admin, shopDomain),
         getMenuCount(admin, shopDomain),
+        getTemplatesCount(admin, shopDomain, session.accessToken!),
         getSectionsCount(admin, shopDomain, session.accessToken!)
     ]);
     const reviewStatusMap = await getReviewStatusMap(db, shopDomain, "templates");
 
-    return { templateData, moCount, mfCount, totalTemplates: totalTemplatesCount, themeId, mediaCount, menuCount, sectionsCount, shop: session.shop, reviewStatusMap };
+    return { templateData, moCount, mfCount, totalTemplates: templatesCount, themeId, mediaCount, menuCount, sectionsCount, shop: session.shop, reviewStatusMap };
 };
 
 export const action = createRouteAction({

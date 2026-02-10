@@ -2116,6 +2116,7 @@ button.ui-btn.btn-modal-danger:hover,
     gap: 24px;
     height: 100%;
     overflow: hidden;
+    padding: 24px;
 }
 
 /* Field Editor Container */
@@ -2491,12 +2492,9 @@ button.ui-btn.btn-modal-danger:hover,
 .mo-entries-empty__text { font-style: italic; color: var(--color-gray-500); }
 
 .mo-entries-list {
-    max-height: 60vh;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding-right: 0;
 }
 
 .mo-entry-item {
@@ -3093,7 +3091,12 @@ button.ui-btn.btn-modal-danger:hover,
     padding: 24px;
     overflow-y: auto;
     flex: 1;
-    max-height: 60vh;
+}
+
+/* Override pour les modales avec contenu mo-modal-content */
+.ui-modal__body:has(.mo-modal-content) {
+    overflow: visible;
+    padding: 0;
 }
 .ui-modal__body > div {
     display: flex;

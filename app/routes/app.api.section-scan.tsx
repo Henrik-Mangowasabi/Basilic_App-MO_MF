@@ -25,13 +25,33 @@ export const loader = async ({ request }: { request: Request }) => {
             try {
                 controller.enqueue(encoder.encode(sse({ progress: 1, message: "Récupération des assets..." })));
 
-                // 1. Lister tous les assets du thème
-                const assetsRes = await fetch(
-                    `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
-                    { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
-                );
-                const assetsJson = await assetsRes.json();
-                const allAssets = assetsJson.assets || [];
+                // 1. Lister TOUS les assets du thème via GraphQL (sans limite)
+                let allAssets: any[] = [];
+                let hasNextPage = true;
+                let cursor: string | null = null;
+
+                while (hasNextPage) {
+                    const query = `
+                        query GetThemeAssets($themeId: ID!, $after: String) {
+                            theme(id: $themeId) {
+                                assets(first: 250, after: $after) {
+                                    pageInfo { hasNextPage endCursor }
+                                    nodes { key }
+                                }
+                            }
+                        }
+                    `;
+                    const graphqlRes = await admin.graphql(query, {
+                        variables: { themeId: `gid://shopify/Theme/${activeThemeId}`, after: cursor }
+                    });
+                    const graphqlJson: any = await graphqlRes.json();
+                    const assets = graphqlJson.data?.theme?.assets?.nodes || [];
+                    const pageInfo = graphqlJson.data?.theme?.assets?.pageInfo || {};
+
+                    allAssets = allAssets.concat(assets);
+                    hasNextPage = pageInfo.hasNextPage || false;
+                    cursor = pageInfo.endCursor || null;
+                }
 
                 // 2. Filtrer pour obtenir les fichiers sections/*.liquid
                 const sectionAssets = allAssets.filter((a: { key: string }) =>
@@ -140,21 +160,40 @@ export const loader = async ({ request }: { request: Request }) => {
                             if (asset.key.endsWith('.json')) {
                                 try {
                                     const parsedJson = JSON.parse(content);
-                                    const findSectionTypes = (obj: any) => {
+                                    const findSectionTypes = (obj: any, depth = 0) => {
+                                        if (depth > 50) return; // Éviter la récursion infinie
                                         if (typeof obj === 'object' && obj !== null) {
-                                            if (obj.type && typeof obj.type === 'string') {
+                                            // Chercher 'type' (main pattern)
+                                            if (obj.type && typeof obj.type === 'string' && obj.type.length > 0) {
                                                 foundTypesAcrossFile.add(obj.type);
                                             }
-                                            Object.values(obj).forEach(findSectionTypes);
+                                            // Chercher aussi 'block_type' pour les blocks
+                                            if (obj.block_type && typeof obj.block_type === 'string' && obj.block_type.length > 0) {
+                                                foundTypesAcrossFile.add(obj.block_type);
+                                            }
+                                            // Parcourir récursivement
+                                            Object.values(obj).forEach(val => findSectionTypes(val, depth + 1));
                                         }
                                     };
                                     findSectionTypes(parsedJson);
                                 } catch (e) {}
                             } else if (asset.key.endsWith('.liquid')) {
-                                // Chercher {% section '...' %} ou {% sections '...' %}
-                                const sectionRegex = /\{%\s*sections?\s*['"]([^'"]+)['"]\s*%\}/g;
+                                // Pattern 1: {% section 'nom' %} ou {% section "nom" %}
+                                const sectionRegex1 = /\{%\s*-?\s*sections?\s*['"]([^'"]+)['"]\s*-?\s*%\}/g;
                                 let match;
-                                while ((match = sectionRegex.exec(content)) !== null) {
+                                while ((match = sectionRegex1.exec(content)) !== null) {
+                                    foundTypesAcrossFile.add(match[1]);
+                                }
+
+                                // Pattern 2: {% include 'sections/nom' %} (ancienne façon)
+                                const includeRegex = /\{%\s*-?\s*include\s+['"]sections\/([^'"]+)['"]\s*-?\s*%\}/g;
+                                while ((match = includeRegex.exec(content)) !== null) {
+                                    foundTypesAcrossFile.add(match[1]);
+                                }
+
+                                // Pattern 3: render 'sections/nom'
+                                const renderRegex = /\{%\s*-?\s*render\s+['"]sections\/([^'"]+)['"]\s*-?\s*%\}/g;
+                                while ((match = renderRegex.exec(content)) !== null) {
                                     foundTypesAcrossFile.add(match[1]);
                                 }
                             }
