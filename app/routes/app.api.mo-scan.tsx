@@ -1,4 +1,5 @@
 import { authenticate } from "../shopify.server";
+import { fetchAssetsList, scanAssetsInBatches } from "../utils/theme-assets.server";
 
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
@@ -12,6 +13,7 @@ export const loader = async ({ request }: { request: Request }) => {
     const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split("/").pop();
     if (!activeThemeId) return new Response(JSON.stringify({ error: "Thème actif non trouvé" }), { status: 400 });
 
+    // Récupérer les types de metaobjects via GraphQL
     const moTypes: string[] = [];
     let moCursor: string | null = null;
     try {
@@ -25,24 +27,15 @@ export const loader = async ({ request }: { request: Request }) => {
                 }`,
                 { variables: { cursor: moCursor } }
             );
-            const j: { data?: { metaobjectDefinitions?: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { type: string }[] } } } = await r.json();
-            const data: { pageInfo?: { hasNextPage: boolean; endCursor: string }; nodes?: { type: string }[] } | undefined = j.data?.metaobjectDefinitions;
+            const j: any = await r.json();
+            const data = j.data?.metaobjectDefinitions;
             if (data?.nodes) moTypes.push(...data.nodes.map((n: { type: string }) => n.type));
             if (!data?.pageInfo?.hasNextPage) break;
             moCursor = data.pageInfo.endCursor;
         }
-    } catch (e) {}
-
-    const assetsRes = await fetch(
-        `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
-        { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
-    );
-    const assetsJson = await assetsRes.json();
-    const allAssets = (assetsJson.assets || []) as { key: string }[];
-    const scannableAssets = allAssets.filter(a => 
-        (a.key.endsWith('.liquid') || a.key.endsWith('.json')) &&
-        !a.key.includes('node_modules')
-    );
+    } catch (e) {
+        console.error(`[MO-SCAN] Error fetching metaobject types:`, e);
+    }
 
     const encoder = new TextEncoder();
     const sse = (data: any) => `data: ${JSON.stringify(data)}\n\n`;
@@ -53,48 +46,45 @@ export const loader = async ({ request }: { request: Request }) => {
             try {
                 console.log(`[MO-SCAN] Starting metaobject scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
                 console.log(`[MO-SCAN] Metaobject types fetched: ${moTypes.length}`, moTypes.slice(0, 5));
-                console.log(`[MO-SCAN] Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
-                const batchSize = 10;
-                let assetsWithContent = 0;
-                for (let i = 0; i < scannableAssets.length; i += batchSize) {
-                    const batch = scannableAssets.slice(i, i + batchSize);
-                    await Promise.all(batch.map(async (asset) => {
-                        try {
-                            const url = `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`;
-                            const res = await fetch(url, {
-                                headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
-                            });
-                            const json = await res.json();
-                            const content = json.asset?.value || "";
-                            if (!content) return;
-                            assetsWithContent++;
 
-                            moTypes.forEach(type => {
-                                if (metaobjectsInCode.has(type)) return;
-                                // Détection robuste : guillemets, après un point, ou entre crochets, avec word boundaries
-                                const escapedType = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                const patterns = [
-                                    `"${escapedType}"`,
-                                    `'${escapedType}'`,
-                                    `\\.${escapedType}\\b`,
-                                    `\\['${escapedType}'\\]`,
-                                    `\\["${escapedType}"\\]`,
-                                ];
-                                const regex = new RegExp(patterns.join('|'), 'i');
-                                if (regex.test(content)) {
-                                    metaobjectsInCode.add(type);
-                                }
-                            });
-                        } catch (err) {
-                            console.error(`Error processing asset ${asset.key}:`, err);
+                // Récupération des assets avec retry
+                const allAssets = await fetchAssetsList(domain, activeThemeId, session.accessToken!);
+                const scannableAssets = allAssets.filter(a =>
+                    (a.key.endsWith('.liquid') || a.key.endsWith('.json')) && !a.key.includes('node_modules')
+                );
+                console.log(`[MO-SCAN] Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
+
+                // Scan avec retry et backoff
+                const assetsWithContent = await scanAssetsInBatches(
+                    scannableAssets, domain, activeThemeId, session.accessToken!,
+                    (scanned, total) => {
+                        const progress = Math.min(99, Math.round((scanned / total) * 100));
+                        controller.enqueue(encoder.encode(sse({ progress, status: `Scanned ${scanned}/${total}...` })));
+                    },
+                    2, 200
+                );
+
+                // Analyse du contenu
+                for (const { content } of assetsWithContent) {
+                    moTypes.forEach(type => {
+                        if (metaobjectsInCode.has(type)) return;
+                        const escapedType = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const patterns = [
+                            `"${escapedType}"`,
+                            `'${escapedType}'`,
+                            `\\.${escapedType}\\b`,
+                            `\\['${escapedType}'\\]`,
+                            `\\["${escapedType}"\\]`,
+                        ];
+                        const regex = new RegExp(patterns.join('|'), 'i');
+                        if (regex.test(content)) {
+                            metaobjectsInCode.add(type);
                         }
-                    }));
-                    const progress = Math.min(99, Math.round(((i + batch.length) / scannableAssets.length) * 100));
-                    controller.enqueue(encoder.encode(sse({ progress, status: `Scanned ${i + batch.length}/${scannableAssets.length}...` })));
-                    await new Promise(r => setTimeout(r, 50));
+                    });
                 }
-                console.log(`[MO-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Metaobjects found: ${metaobjectsInCode.size}`);
+
+                console.log(`[MO-SCAN] Scan complete. Assets with content: ${assetsWithContent.length}. Metaobjects found: ${metaobjectsInCode.size}`);
                 console.log(`[MO-SCAN] Results:`, Array.from(metaobjectsInCode).slice(0, 10));
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metaobjectsInCode) })));
             } catch (e) {

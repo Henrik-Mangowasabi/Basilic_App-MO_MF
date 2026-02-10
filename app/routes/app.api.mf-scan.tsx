@@ -1,4 +1,5 @@
 import { authenticate } from "../shopify.server";
+import { fetchAssetsList, scanAssetsInBatches } from "../utils/theme-assets.server";
 
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
@@ -21,10 +22,10 @@ export const loader = async ({ request }: { request: Request }) => {
                 console.log(`[MF-SCAN] Starting scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
                 controller.enqueue(encoder.encode(sse({ progress: 1, message: "Initialisation..." })));
 
+                // 1. Récupération des clés metafield
                 const mfKeys: string[] = [];
                 const ownerTypes = ["PRODUCT", "PRODUCTVARIANT", "COLLECTION", "CUSTOMER", "ORDER", "DRAFTORDER", "COMPANY", "LOCATION", "MARKET", "PAGE", "BLOG", "ARTICLE", "SHOP"];
 
-                // 1. Récupération des clés à l'intérieur du stream pour éviter le timeout
                 for (let idx = 0; idx < ownerTypes.length; idx++) {
                     const ownerType = ownerTypes[idx];
                     let cursor: string | null = null;
@@ -60,97 +61,56 @@ export const loader = async ({ request }: { request: Request }) => {
                 }
                 console.log(`[MF-SCAN] Total metafield keys fetched: ${mfKeys.length}`);
 
-                // 2. Récupération des assets
-                const assetsRes = await fetch(`https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`, {
-                    headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
-                });
-                if (!assetsRes.ok) {
-                    console.error(`[MF-SCAN] Failed to fetch assets: ${assetsRes.status}`);
-                    throw new Error(`Assets API returned ${assetsRes.status}`);
-                }
-                const assetsJson = await assetsRes.json();
-                const allAssets = (assetsJson.assets || []) as { key: string }[];
+                // 2. Récupération des assets avec retry
+                const allAssets = await fetchAssetsList(domain, activeThemeId, session.accessToken!);
                 const scannableAssets = allAssets.filter(a =>
                     (a.key.endsWith('.liquid') || a.key.endsWith('.json')) && !a.key.includes('node_modules')
                 );
                 console.log(`[MF-SCAN] Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
 
+                // 3. Scan des assets avec retry et backoff
                 const mfInCode = new Set<string>();
-                const batchSize = 1;  // Réduit à 1 - une seule requête à la fois pour éviter rate limit
-                let assetsWithContent = 0;
 
-                // 3. Scan des assets
-                for (let i = 0; i < scannableAssets.length; i += batchSize) {
-                    const batch = scannableAssets.slice(i, i + batchSize);
-                    // Sequential processing instead of Promise.all for batch size 1
-                    for (const asset of batch) {
-                        let attempts = 0;
-                        const maxAttempts = 3;
-                        let content = "";
+                const assetsWithContent = await scanAssetsInBatches(
+                    scannableAssets, domain, activeThemeId, session.accessToken!,
+                    (scanned, total) => {
+                        const scanProgress = 10 + Math.round((scanned / total) * 90);
+                        controller.enqueue(encoder.encode(sse({ progress: scanProgress, status: `Scanned ${scanned}/${total} files...` })));
+                    },
+                    2, 200
+                );
 
-                        while (attempts < maxAttempts) {
-                            try {
-                                const url = `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`;
-                                const res = await fetch(url, {
-                                    headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
-                                });
-                                if (res.ok) {
-                                    const json = await res.json();
-                                    content = json.asset?.value || "";
-                                    break;
-                                } else if (res.status === 429) {
-                                    // Exponential backoff: 2s, 4s, 8s
-                                    const backoffMs = Math.pow(2, attempts + 1) * 1000;
-                                    await new Promise(r => setTimeout(r, backoffMs));
-                                } else { break; }
-                            } catch (e) {
-                                await new Promise(r => setTimeout(r, 200));
-                            }
-                            attempts++;
+                // 4. Analyse du contenu
+                for (const { content } of assetsWithContent) {
+                    mfKeys.forEach((fullKey) => {
+                        if (mfInCode.has(fullKey)) return;
+                        const parts = fullKey.split('.');
+                        const key = parts[parts.length - 1];
+                        const namespace = parts[0];
+
+                        const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const escapedFullKey = escapeRegex(fullKey);
+                        const escapedKey = escapeRegex(key);
+                        const escapedNamespace = escapeRegex(namespace);
+
+                        const patterns = [
+                            escapedFullKey,
+                            `metafields\\.${escapedFullKey}`,
+                            `metafields\\.${escapedNamespace}\\.${escapedKey}`,
+                            `\\["${escapedKey}"\\]`,
+                            `\\['${escapedKey}'\\]`,
+                            `metafields\\.get\\('${escapedFullKey}'`,
+                            `metafields\\.${escapedKey}\\b`,
+                        ];
+
+                        const regex = new RegExp(patterns.join('|'), 'i');
+                        if (regex.test(content)) {
+                            mfInCode.add(fullKey);
                         }
-
-                        if (!content) {
-                            continue;
-                        }
-                        assetsWithContent++;
-
-                        mfKeys.forEach((fullKey) => {
-                            if (mfInCode.has(fullKey)) return;
-                            const parts = fullKey.split('.');
-                            const key = parts[parts.length - 1];
-                            const namespace = parts[0];
-
-                            // Escape regex special characters
-                            const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                            const escapedFullKey = escapeRegex(fullKey);
-                            const escapedKey = escapeRegex(key);
-                            const escapedNamespace = escapeRegex(namespace);
-
-                            // Détection robuste avec regex pour éviter les faux positifs
-                            const patterns = [
-                                escapedFullKey,  // clé complète exacte
-                                `metafields\\.${escapedFullKey}`,  // metafields.namespace.key
-                                `metafields\\.${escapedNamespace}\\.${escapedKey}`,  // pattern complet
-                                `\\["${escapedKey}"\\]`,  // ["key"]
-                                `\\['${escapedKey}'\\]`,  // ['key']
-                                `metafields\\.get\\('${escapedFullKey}'`,  // metafields.get('...')
-                                `metafields\\.${escapedKey}\\b`,  // word boundary après key
-                            ];
-
-                            const regex = new RegExp(patterns.join('|'), 'i');
-                            if (regex.test(content)) {
-                                mfInCode.add(fullKey);
-                            }
-                        });
-                    }
-
-                    const scanProgress = 10 + Math.round(((i + batch.length) / scannableAssets.length) * 90);
-                    controller.enqueue(encoder.encode(sse({ progress: scanProgress, status: `Scanned ${i + batch.length}/${scannableAssets.length} files...` })));
-                    // Délai entre chaque asset pour respecter rate limits Shopify (sequential mode)
-                    await new Promise(r => setTimeout(r, 100));
+                    });
                 }
 
-                console.log(`[MF-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Metafields found in code: ${mfInCode.size}`);
+                console.log(`[MF-SCAN] Scan complete. Assets with content: ${assetsWithContent.length}. Metafields found in code: ${mfInCode.size}`);
                 console.log(`[MF-SCAN] Results:`, Array.from(mfInCode).slice(0, 10));
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(mfInCode) })));
             } catch (e) {

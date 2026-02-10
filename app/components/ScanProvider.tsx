@@ -141,21 +141,30 @@ export function ScanProvider({ children }: ScanProviderProps) {
                 { url: `${basePath}/api/section-scan`, key: 'sections', setter: (res: any) => setSectionResults(res), storage: SECTION_RESULTS_KEY }
             ];
 
-            const results = await Promise.allSettled(endpoints.map(async (e) => {
-                const res = await scanEndpoint(e.url, abort.signal, (p) => {
-                    progressRef.current[e.key as keyof typeof progressRef.current] = p;
+            // Exécution SÉQUENTIELLE pour éviter les rate limits Shopify (429)
+            let successCount = 0;
+            for (const e of endpoints) {
+                if (abort.signal.aborted) break;
+                try {
+                    const res = await scanEndpoint(e.url, abort.signal, (p) => {
+                        progressRef.current[e.key as keyof typeof progressRef.current] = p;
+                        updateProgress();
+                    });
+                    console.log(`[SCAN-PROVIDER] Endpoint ${e.url} returned ${Array.isArray(res) ? res.length : 0} items`);
+                    e.setter(res);
+                    sessionStorage.setItem(e.storage, JSON.stringify(res));
+                    console.log(`[SCAN-PROVIDER] Stored ${e.key} in sessionStorage:`, Array.isArray(res) ? res.slice(0, 5) : res);
+                    progressRef.current[e.key as keyof typeof progressRef.current] = 100;
                     updateProgress();
-                });
-                console.log(`[SCAN-PROVIDER] Endpoint ${e.url} returned ${Array.isArray(res) ? res.length : 0} items`);
-                e.setter(res);
-                sessionStorage.setItem(e.storage, JSON.stringify(res));
-                console.log(`[SCAN-PROVIDER] Stored ${e.key} in sessionStorage:`, Array.isArray(res) ? res.slice(0, 5) : res);
-                return { key: e.key, success: true };
-            }));
+                    successCount++;
+                } catch (err) {
+                    console.error(`[SCAN-PROVIDER] Endpoint ${e.url} failed:`, err);
+                    progressRef.current[e.key as keyof typeof progressRef.current] = 100;
+                    updateProgress();
+                }
+            }
 
-            // Vérifier si au moins un scan a réussi
-            const hasResults = results.some(r => r.status === 'fulfilled');
-            if (!hasResults) {
+            if (successCount === 0) {
                 throw new Error("Aucun endpoint de scan n'a réussi");
             }
 

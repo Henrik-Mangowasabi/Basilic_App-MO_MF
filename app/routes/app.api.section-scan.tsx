@@ -1,4 +1,5 @@
 import { authenticate } from "../shopify.server";
+import { fetchAssetsList, scanAssetsInBatches } from "../utils/theme-assets.server";
 
 /**
  * Route API : scan du thème pour les sections, stream progression 0-100.
@@ -26,30 +27,19 @@ export const loader = async ({ request }: { request: Request }) => {
                 console.log(`[SECTION-SCAN] Starting scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
                 controller.enqueue(encoder.encode(sse({ progress: 1, message: "Récupération des assets..." })));
 
-                // 1. Lister TOUS les assets du thème via REST API
-                const assetsRes = await fetch(
-                    `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
-                    { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
-                );
-                if (!assetsRes.ok) {
-                    console.error(`[SECTION-SCAN] Failed to fetch assets: ${assetsRes.status}`);
-                    throw new Error(`Assets API returned ${assetsRes.status}`);
-                }
-                const assetsJson = await assetsRes.json();
-                const allAssets = (assetsJson.assets || []) as { key: string }[];
+                // 1. Lister TOUS les assets du thème avec retry
+                const allAssets = await fetchAssetsList(domain, activeThemeId, session.accessToken!);
 
-                // 2. Filtrer pour obtenir les fichiers sections/*.liquid (sections/ ou sections/*/... ou en sous-dossiers)
+                // 2. Filtrer pour obtenir les fichiers sections/*.liquid
                 const sectionAssets = allAssets.filter((a: { key: string }) =>
                     a.key.includes('sections/') && a.key.endsWith('.liquid')
                 );
 
-                // Debug: Afficher les 15 premiers fichiers section trouvés
-                const sectionSamples = sectionAssets.slice(0, 15).map(a => a.key);
                 console.log(`[SECTION-SCAN] Total assets: ${allAssets.length}, Section files: ${sectionAssets.length}`);
-                console.log(`[SECTION-SCAN] Sample section files (0-15):`, sectionSamples);
+                console.log(`[SECTION-SCAN] Sample section files (0-15):`, sectionAssets.slice(0, 15).map(a => a.key));
                 controller.enqueue(encoder.encode(sse({ progress: 5, message: `${sectionAssets.length} sections trouvées...` })));
 
-                // 3. Pour chaque section, récupérer le contenu et extraire le nom du schema
+                // 3. Pour chaque section, récupérer le contenu et extraire le nom du schema (avec retry)
                 const sectionsData: Array<{
                     fileName: string;
                     key: string;
@@ -57,156 +47,104 @@ export const loader = async ({ request }: { request: Request }) => {
                     assignments: string[];
                 }> = [];
 
-                const batchSize = 2;
-                const totalSections = sectionAssets.length;
+                const sectionContents = await scanAssetsInBatches(
+                    sectionAssets, domain, activeThemeId, session.accessToken!,
+                    (scanned, total) => {
+                        const progress = Math.round(5 + (scanned / total) * 30);
+                        controller.enqueue(encoder.encode(sse({ progress, message: "Analyse des sections..." })));
+                    },
+                    2, 200
+                );
 
-                for (let i = 0; i < sectionAssets.length; i += batchSize) {
-                    const batch = sectionAssets.slice(i, i + batchSize);
-
-                    await Promise.all(batch.map(async (asset: { key: string }) => {
+                for (const { key, content } of sectionContents) {
+                    const fileName = key.replace('sections/', '').replace('.liquid', '');
+                    let schemaName = fileName;
+                    const schemaMatch = content.match(/\{%\s*schema\s*%\}([\s\S]*?)\{%\s*endschema\s*%\}/i);
+                    if (schemaMatch) {
                         try {
-                            const url = `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`;
-                            const res = await fetch(url, {
-                                headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
-                            });
-
-                            if (!res.ok) {
-                                console.warn(`Failed to fetch section ${asset.key}: ${res.status}`);
-                                return;
-                            }
-
-                            const json = await res.json();
-                            const content = json.asset?.value || "";
-
-                            // Extraire le nom du fichier (ex: sections/header.liquid -> header)
-                            const fileName = asset.key.replace('sections/', '').replace('.liquid', '');
-
-                            // Extraire le nom du schema
-                            let schemaName = fileName;
-                            const schemaMatch = content.match(/\{%\s*schema\s*%\}([\s\S]*?)\{%\s*endschema\s*%\}/i);
-                            if (schemaMatch) {
-                                try {
-                                    const schemaContent = schemaMatch[1];
-                                    const schemaJson = JSON.parse(schemaContent);
-                                    if (schemaJson.name) {
-                                        schemaName = schemaJson.name;
-                                    }
-                                } catch (e) {
-                                    // Si le parsing échoue, on garde le nom du fichier
-                                }
-                            }
-
-                            sectionsData.push({
-                                fileName,
-                                key: asset.key,
-                                schemaName,
-                                assignments: []
-                            });
-                        } catch (e) {
-                            console.error(`Error processing section ${asset.key}:`, e);
-                        }
-                    }));
-
-                    const sectionsProgress = Math.round(5 + ((i + batch.length) / totalSections) * 30);
-                    controller.enqueue(encoder.encode(sse({ progress: sectionsProgress, message: "Analyse des sections..." })));
-
-                    await new Promise(r => setTimeout(r, 100));
+                            const schemaJson = JSON.parse(schemaMatch[1]);
+                            if (schemaJson.name) schemaName = schemaJson.name;
+                        } catch (e) { /* fallback to fileName */ }
+                    }
+                    sectionsData.push({ fileName, key, schemaName, assignments: [] });
                 }
 
+                // Aussi ajouter les sections dont le contenu n'a pas pu être récupéré
+                const fetchedKeys = new Set(sectionContents.map(c => c.key));
+                for (const asset of sectionAssets) {
+                    if (!fetchedKeys.has(asset.key)) {
+                        const fileName = asset.key.replace('sections/', '').replace('.liquid', '');
+                        sectionsData.push({ fileName, key: asset.key, schemaName: fileName, assignments: [] });
+                    }
+                }
+
+                console.log(`[SECTION-SCAN] Sections parsed: ${sectionsData.length} (${sectionContents.length} with content)`);
                 controller.enqueue(encoder.encode(sse({ progress: 35, message: "Récupération des fichiers JSON..." })));
 
                 // 4. Récupérer tous les fichiers susceptibles de contenir des sections
                 const scanAssets = allAssets.filter((a: { key: string }) =>
-                    (a.key.startsWith('templates/') || a.key.startsWith('sections/') || a.key.startsWith('layout/') || a.key.startsWith('snippets/')) && 
+                    (a.key.startsWith('templates/') || a.key.startsWith('sections/') || a.key.startsWith('layout/') || a.key.startsWith('snippets/')) &&
                     (a.key.endsWith('.json') || a.key.endsWith('.liquid'))
                 );
 
                 controller.enqueue(encoder.encode(sse({ progress: 40, message: `${scanAssets.length} fichiers à scanner...` })));
 
-                // 5. Scanner les fichiers pour trouver les assignations
-                const totalScanFiles = scanAssets.length;
+                // 5. Scanner les fichiers pour trouver les assignations (avec retry)
+                const scanContents = await scanAssetsInBatches(
+                    scanAssets, domain, activeThemeId, session.accessToken!,
+                    (scanned, total) => {
+                        const progress = Math.round(40 + (scanned / total) * 55);
+                        controller.enqueue(encoder.encode(sse({ progress, message: "Scan des assignations..." })));
+                    },
+                    2, 200
+                );
 
-                for (let i = 0; i < scanAssets.length; i += batchSize) {
-                    const batch = scanAssets.slice(i, i + batchSize);
+                for (const { key: assetKey, content } of scanContents) {
+                    const foundTypesAcrossFile = new Set<string>();
 
-                    await Promise.all(batch.map(async (asset: { key: string }) => {
+                    if (assetKey.endsWith('.json')) {
                         try {
-                            const url = `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`;
-                            const res = await fetch(url, {
-                                headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
-                            });
-
-                            if (!res.ok) {
-                                console.warn(`Failed to fetch file ${asset.key}: ${res.status}`);
-                                return;
-                            }
-
-                            const json = await res.json();
-                            const content = json.asset?.value || "";
-
-                            const foundTypesAcrossFile = new Set<string>();
-
-                            if (asset.key.endsWith('.json')) {
-                                try {
-                                    const parsedJson = JSON.parse(content);
-                                    const findSectionTypes = (obj: any, depth = 0) => {
-                                        if (depth > 50) return; // Éviter la récursion infinie
-                                        if (typeof obj === 'object' && obj !== null) {
-                                            // Chercher 'type' (main pattern)
-                                            if (obj.type && typeof obj.type === 'string' && obj.type.length > 0) {
-                                                foundTypesAcrossFile.add(obj.type);
-                                            }
-                                            // Chercher aussi 'block_type' pour les blocks
-                                            if (obj.block_type && typeof obj.block_type === 'string' && obj.block_type.length > 0) {
-                                                foundTypesAcrossFile.add(obj.block_type);
-                                            }
-                                            // Parcourir récursivement
-                                            Object.values(obj).forEach(val => findSectionTypes(val, depth + 1));
-                                        }
-                                    };
-                                    findSectionTypes(parsedJson);
-                                } catch (e) {}
-                            } else if (asset.key.endsWith('.liquid')) {
-                                // Pattern 1: {% section 'nom' %} ou {% section "nom" %}
-                                const sectionRegex1 = /\{%\s*-?\s*sections?\s*['"]([^'"]+)['"]\s*-?\s*%\}/g;
-                                let match;
-                                while ((match = sectionRegex1.exec(content)) !== null) {
-                                    foundTypesAcrossFile.add(match[1]);
+                            const parsedJson = JSON.parse(content);
+                            const findSectionTypes = (obj: any, depth = 0) => {
+                                if (depth > 50) return;
+                                if (typeof obj === 'object' && obj !== null) {
+                                    if (obj.type && typeof obj.type === 'string' && obj.type.length > 0) {
+                                        foundTypesAcrossFile.add(obj.type);
+                                    }
+                                    if (obj.block_type && typeof obj.block_type === 'string' && obj.block_type.length > 0) {
+                                        foundTypesAcrossFile.add(obj.block_type);
+                                    }
+                                    Object.values(obj).forEach(val => findSectionTypes(val, depth + 1));
                                 }
-
-                                // Pattern 2: {% include 'sections/nom' %} (ancienne façon)
-                                const includeRegex = /\{%\s*-?\s*include\s+['"]sections\/([^'"]+)['"]\s*-?\s*%\}/g;
-                                while ((match = includeRegex.exec(content)) !== null) {
-                                    foundTypesAcrossFile.add(match[1]);
-                                }
-
-                                // Pattern 3: render 'sections/nom'
-                                const renderRegex = /\{%\s*-?\s*render\s+['"]sections\/([^'"]+)['"]\s*-?\s*%\}/g;
-                                while ((match = renderRegex.exec(content)) !== null) {
-                                    foundTypesAcrossFile.add(match[1]);
-                                }
-                            }
-
-                            // Pour chaque type trouvé, l'associer à la section correspondante
-                            foundTypesAcrossFile.forEach(type => {
-                                const section = sectionsData.find(s => s.fileName === type);
-                                if (section && !section.assignments.includes(asset.key)) {
-                                    section.assignments.push(asset.key);
-                                }
-                            });
-                        } catch (e) {
-                            console.error(`Error processing file ${asset.key}:`, e);
+                            };
+                            findSectionTypes(parsedJson);
+                        } catch (e) {}
+                    } else if (assetKey.endsWith('.liquid')) {
+                        const sectionRegex1 = /\{%\s*-?\s*sections?\s*['"]([^'"]+)['"]\s*-?\s*%\}/g;
+                        let match;
+                        while ((match = sectionRegex1.exec(content)) !== null) {
+                            foundTypesAcrossFile.add(match[1]);
                         }
-                    }));
+                        const includeRegex = /\{%\s*-?\s*include\s+['"]sections\/([^'"]+)['"]\s*-?\s*%\}/g;
+                        while ((match = includeRegex.exec(content)) !== null) {
+                            foundTypesAcrossFile.add(match[1]);
+                        }
+                        const renderRegex = /\{%\s*-?\s*render\s+['"]sections\/([^'"]+)['"]\s*-?\s*%\}/g;
+                        while ((match = renderRegex.exec(content)) !== null) {
+                            foundTypesAcrossFile.add(match[1]);
+                        }
+                    }
 
-                    const scanProgress = Math.round(40 + ((i + batch.length) / totalScanFiles) * 55);
-                    controller.enqueue(encoder.encode(sse({ progress: scanProgress, message: "Scan des assignations..." })));
-
-                    await new Promise(r => setTimeout(r, 100));
+                    foundTypesAcrossFile.forEach(type => {
+                        const section = sectionsData.find(s => s.fileName === type);
+                        if (section && !section.assignments.includes(assetKey)) {
+                            section.assignments.push(assetKey);
+                        }
+                    });
                 }
 
-                // 6. Retourner les résultats
-                console.log(`[SECTION-SCAN] Scan complete. Total sections found: ${sectionsData.length}`);
+                // 6. Retourner TOUTES les sections (pas seulement celles avec assignations)
+                console.log(`[SECTION-SCAN] Scan complete. Total sections: ${sectionsData.length}`);
                 const results = sectionsData.map(s => ({
                     id: s.key,
                     fileName: s.fileName,
@@ -215,7 +153,7 @@ export const loader = async ({ request }: { request: Request }) => {
                     assignmentCount: s.assignments.length,
                     assignments: s.assignments
                 }));
-                console.log(`[SECTION-SCAN] Results:`, results.slice(0, 5));
+                console.log(`[SECTION-SCAN] Results (first 5):`, results.slice(0, 5));
                 controller.enqueue(encoder.encode(sse({
                     progress: 100,
                     results

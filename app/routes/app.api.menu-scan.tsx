@@ -1,4 +1,5 @@
 import { authenticate } from "../shopify.server";
+import { fetchAssetsList, scanAssetsInBatches } from "../utils/theme-assets.server";
 
 export const loader = async ({ request }: { request: Request }) => {
     const { admin, session } = await authenticate.admin(request);
@@ -12,6 +13,7 @@ export const loader = async ({ request }: { request: Request }) => {
     const activeThemeId = themesData.data?.themes?.nodes?.[0]?.id.split("/").pop();
     if (!activeThemeId) return new Response(JSON.stringify({ error: "Thème actif non trouvé" }), { status: 400 });
 
+    // Récupérer les menus via GraphQL
     let menuHandles: string[] = [];
     let cursor: string | null = null;
     for (;;) {
@@ -31,17 +33,6 @@ export const loader = async ({ request }: { request: Request }) => {
         cursor = data.pageInfo.endCursor;
     }
 
-    const assetsRes = await fetch(
-        `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
-        { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
-    );
-    const assetsJson = await assetsRes.json();
-    const allAssets = (assetsJson.assets || []) as { key: string }[];
-    const scannableAssets = allAssets.filter(a =>
-        (a.key.endsWith('.liquid') || a.key.endsWith('.json')) &&
-        !a.key.includes('node_modules')
-    );
-
     const encoder = new TextEncoder();
     const sse = (data: object) => "data: " + JSON.stringify(data) + "\n\n";
     const menusInCode = new Set<string>();
@@ -50,36 +41,35 @@ export const loader = async ({ request }: { request: Request }) => {
         async start(controller) {
             try {
                 console.log(`[MENU-SCAN] Starting scan. Domain: ${domain}, Theme ID: ${activeThemeId}`);
-                console.log(`[MENU-SCAN] Total menus: ${menuHandles.length}, Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
                 controller.enqueue(encoder.encode(sse({ progress: 0 })));
-                const batchSize = 10;
-                let assetsWithContent = 0;
-                for (let i = 0; i < scannableAssets.length; i += batchSize) {
-                    const batch = scannableAssets.slice(i, i + batchSize);
-                    await Promise.all(batch.map(async (asset) => {
-                        try {
-                            const url = `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json?asset[key]=${encodeURIComponent(asset.key)}`;
-                            const res = await fetch(url, {
-                                headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
-                            });
-                            const json = await res.json();
-                            const content = json.asset?.value || "";
-                            if (!content) return;
-                            assetsWithContent++;
 
-                            menuHandles.forEach((handle) => {
-                                // Recherche large : guillemets ou après un point
-                                if (content.includes(`"${handle}"`) || content.includes(`'${handle}'`) || content.includes(`.${handle}`)) {
-                                    menusInCode.add(handle);
-                                }
-                            });
-                        } catch (e) {}
-                    }));
-                    const progress = Math.min(99, Math.round(((i + batch.length) / scannableAssets.length) * 100));
-                    controller.enqueue(encoder.encode(sse({ progress })));
-                    await new Promise(r => setTimeout(r, 50));
+                // Récupération des assets avec retry
+                const allAssets = await fetchAssetsList(domain, activeThemeId, session.accessToken!);
+                const scannableAssets = allAssets.filter(a =>
+                    (a.key.endsWith('.liquid') || a.key.endsWith('.json')) && !a.key.includes('node_modules')
+                );
+                console.log(`[MENU-SCAN] Total menus: ${menuHandles.length}, Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
+
+                // Scan avec retry et backoff
+                const assetsWithContent = await scanAssetsInBatches(
+                    scannableAssets, domain, activeThemeId, session.accessToken!,
+                    (scanned, total) => {
+                        const progress = Math.min(99, Math.round((scanned / total) * 100));
+                        controller.enqueue(encoder.encode(sse({ progress })));
+                    },
+                    2, 200
+                );
+
+                // Analyse du contenu
+                for (const { content } of assetsWithContent) {
+                    menuHandles.forEach((handle) => {
+                        if (content.includes(`"${handle}"`) || content.includes(`'${handle}'`) || content.includes(`.${handle}`)) {
+                            menusInCode.add(handle);
+                        }
+                    });
                 }
-                console.log(`[MENU-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Menus found: ${menusInCode.size}`);
+
+                console.log(`[MENU-SCAN] Scan complete. Assets with content: ${assetsWithContent.length}. Menus found: ${menusInCode.size}`);
                 console.log(`[MENU-SCAN] Results:`, Array.from(menusInCode).slice(0, 10));
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(menusInCode) })));
             } catch (e) {
