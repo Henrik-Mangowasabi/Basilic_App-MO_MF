@@ -1044,14 +1044,11 @@ tr[role="rowgroup"]::after {
 
 /* --- Modale Assignations (style Créateurs / Gérer les entrées) --- */
 .mf-assignments-modal__wrap {
-    padding: 8px 4px 28px 4px;
 }
 .mf-assignments-modal__header {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    margin-bottom: 20px;
-    padding-bottom: 4px;
 }
 .mf-assignments-modal__subtitle-row {
     display: flex;
@@ -1082,6 +1079,7 @@ tr[role="rowgroup"]::after {
     gap: 10px;
     max-height: 55vh;
     overflow-y: auto;
+    padding-right: 10px;
 }
 .mf-assignments-modal__card {
     display: flex;

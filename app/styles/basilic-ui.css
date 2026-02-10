@@ -1963,7 +1963,7 @@ button.ui-btn.btn-modal-danger:hover,
 .mf-cell--file {
     display: flex;
     align-items: center;
-    flex-direction: row;
+    flex-direction: column;
     gap: 12px;
 }
 
@@ -2112,7 +2112,7 @@ button.ui-btn.btn-modal-danger:hover,
 
 .mo-modal-content {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     gap: 24px;
     height: 100%;
     overflow: hidden;
@@ -2299,7 +2299,6 @@ button.ui-btn.btn-modal-danger:hover,
     color: var(--color-gray-400);
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    padding: 0 4px;
 }
 
 .mo-structure-section__list {
@@ -3088,9 +3087,10 @@ button.ui-btn.btn-modal-danger:hover,
 }
 
 .ui-modal__body {
-    padding: 24px;
+    padding: 24px 14px 24px 24px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
 }
 
 /* Override pour les modales avec contenu mo-modal-content */

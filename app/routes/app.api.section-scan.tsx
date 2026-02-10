@@ -25,7 +25,7 @@ export const loader = async ({ request }: { request: Request }) => {
             try {
                 controller.enqueue(encoder.encode(sse({ progress: 1, message: "Récupération des assets..." })));
 
-                // 1. Lister TOUS les assets du thème via GraphQL (sans limite)
+                // 1. Lister TOUS les assets du thème via GraphQL (pagination complète, sans limite)
                 let allAssets: any[] = [];
                 let hasNextPage = true;
                 let cursor: string | null = null;
