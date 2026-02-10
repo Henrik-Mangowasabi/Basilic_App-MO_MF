@@ -81,10 +81,12 @@ export const loader = async ({ request }: { request: Request }) => {
                                     metaobjectsInCode.add(type);
                                 }
                             });
-                        } catch (err) {}
+                        } catch (err) {
+                            console.error(`Error processing asset ${asset.key}:`, err);
+                        }
                     }));
                     const progress = Math.min(99, Math.round(((i + batch.length) / scannableAssets.length) * 100));
-                    controller.enqueue(encoder.encode(sse({ progress })));
+                    controller.enqueue(encoder.encode(sse({ progress, status: `Scanned ${i + batch.length}/${scannableAssets.length}...` })));
                     await new Promise(r => setTimeout(r, 50));
                 }
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(metaobjectsInCode) })));
