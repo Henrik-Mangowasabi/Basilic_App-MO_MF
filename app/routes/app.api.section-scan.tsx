@@ -48,7 +48,7 @@ export const loader = async ({ request }: { request: Request }) => {
                     assignments: string[];
                 }> = [];
 
-                const batchSize = 10;
+                const batchSize = 2;
                 const totalSections = sectionAssets.length;
 
                 for (let i = 0; i < sectionAssets.length; i += batchSize) {
@@ -61,7 +61,10 @@ export const loader = async ({ request }: { request: Request }) => {
                                 headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
                             });
 
-                            if (!res.ok) return;
+                            if (!res.ok) {
+                                console.warn(`Failed to fetch section ${asset.key}: ${res.status}`);
+                                return;
+                            }
 
                             const json = await res.json();
                             const content = json.asset?.value || "";
@@ -91,12 +94,14 @@ export const loader = async ({ request }: { request: Request }) => {
                                 assignments: []
                             });
                         } catch (e) {
-                            // Ignorer les erreurs
+                            console.error(`Error processing section ${asset.key}:`, e);
                         }
                     }));
 
                     const sectionsProgress = Math.round(5 + ((i + batch.length) / totalSections) * 30);
                     controller.enqueue(encoder.encode(sse({ progress: sectionsProgress, message: "Analyse des sections..." })));
+
+                    await new Promise(r => setTimeout(r, 100));
                 }
 
                 controller.enqueue(encoder.encode(sse({ progress: 35, message: "Récupération des fichiers JSON..." })));
@@ -122,7 +127,10 @@ export const loader = async ({ request }: { request: Request }) => {
                                 headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" }
                             });
 
-                            if (!res.ok) return;
+                            if (!res.ok) {
+                                console.warn(`Failed to fetch file ${asset.key}: ${res.status}`);
+                                return;
+                            }
 
                             const json = await res.json();
                             const content = json.asset?.value || "";
@@ -158,11 +166,15 @@ export const loader = async ({ request }: { request: Request }) => {
                                     section.assignments.push(asset.key);
                                 }
                             });
-                        } catch (e) {}
+                        } catch (e) {
+                            console.error(`Error processing file ${asset.key}:`, e);
+                        }
                     }));
 
                     const scanProgress = Math.round(40 + ((i + batch.length) / totalScanFiles) * 55);
                     controller.enqueue(encoder.encode(sse({ progress: scanProgress, message: "Scan des assignations..." })));
+
+                    await new Promise(r => setTimeout(r, 100));
                 }
 
                 // 6. Retourner les résultats

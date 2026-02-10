@@ -250,13 +250,25 @@ export default function AppTemplates() {
         if (!sortConfig.column) return data;
 
         const sorted = [...data].sort((a, b) => {
-            let aVal: string = '';
-            let bVal: string = '';
+            let aVal: any = '';
+            let bVal: any = '';
 
             switch (sortConfig.column) {
                 case 'name':
                     aVal = (a.name || '').toLowerCase();
                     bVal = (b.name || '').toLowerCase();
+                    break;
+                case 'updated':
+                    aVal = new Date(a.updated_at).getTime();
+                    bVal = new Date(b.updated_at).getTime();
+                    break;
+                case 'countActive':
+                    aVal = a.countActive || 0;
+                    bVal = b.countActive || 0;
+                    break;
+                case 'countInactive':
+                    aVal = a.countInactive || 0;
+                    bVal = b.countInactive || 0;
                     break;
                 default:
                     return 0;
@@ -279,52 +291,54 @@ export default function AppTemplates() {
     }, [actionData, revalidator, clearSelection]);
 
 
+    const SortableHeader = ({ label, columnKey }: { label: string; columnKey: string }) => (
+        <div
+            className="mf-col--sortable"
+            onClick={(e) => { e.stopPropagation(); handleSort(columnKey); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleSort(columnKey); } }}
+            role="button"
+            tabIndex={0}
+        >
+            <span>{label}</span>
+            {sortConfig.column === columnKey ? (
+                <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className={`mf-sort-icon ${sortConfig.direction === 'desc' ? 'mf-sort-icon--desc' : ''}`}
+                >
+                    <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+            ) : (
+                <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="mf-sort-icon mf-sort-icon--neutral"
+                >
+                    <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+            )}
+        </div>
+    );
+
     const columns = [
         {
             key: "name",
-            label: (
-                <div
-                    className="mf-col--sortable"
-                    onClick={(e) => { e.stopPropagation(); handleSort('name'); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); handleSort('name'); } }}
-                    role="button"
-                    tabIndex={0}
-                >
-                    <span>NOM DU TEMPLATE</span>
-                    {sortConfig.column === 'name' ? (
-                        <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 12 12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            className={`mf-sort-icon ${sortConfig.direction === 'desc' ? 'mf-sort-icon--desc' : ''}`}
-                        >
-                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                    ) : (
-                        <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 12 12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            className="mf-sort-icon mf-sort-icon--neutral"
-                        >
-                            <path d="M3 4.5L6 1.5L9 4.5" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M3 7.5L6 10.5L9 7.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                    )}
-                </div>
-            ),
+            label: <SortableHeader label="NOM DU TEMPLATE" columnKey="name" />,
             className: "mf-col--name"
         },
-        { key: "updated", label: "DATE DE CRÉATION", className: "mf-col--date" },
-        { key: "countActive", label: "ASSIGNATIONS ACTIVES", className: "mf-col--count" },
-        { key: "countInactive", label: "ASSIGNATIONS INACTIVES", className: "mf-col--count" }
+        { key: "updated", label: <SortableHeader label="DATE DE CRÉATION" columnKey="updated" />, className: "mf-col--date" },
+        { key: "countActive", label: <SortableHeader label="ASSIGNATIONS ACTIVES" columnKey="countActive" />, className: "mf-col--count" },
+        { key: "countInactive", label: <SortableHeader label="ASSIGNATIONS INACTIVES" columnKey="countInactive" />, className: "mf-col--count" }
     ];
 
     /* Empêche tout événement pointer/clic sur les cellules de déclencher la sélection (React Aria utilise usePress) */

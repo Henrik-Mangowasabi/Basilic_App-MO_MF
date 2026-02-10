@@ -750,8 +750,6 @@ body {
 .modal-body {
     padding-top: var(--space-6);
     padding-bottom: var(--space-6);
-    max-height: 60vh;
-    overflow-y: auto;
 }
 
 .modal-footer {
@@ -2114,8 +2112,10 @@ button.ui-btn.btn-modal-danger:hover,
 
 .mo-modal-content {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 24px;
+    height: 100%;
+    overflow: hidden;
 }
 
 /* Field Editor Container */
@@ -2125,8 +2125,12 @@ button.ui-btn.btn-modal-danger:hover,
     display: flex;
     flex-direction: column;
     gap: 20px;
-    position: relative;
+    position: sticky;
+    top: 0;
+    height: fit-content;
+    flex-shrink: 0;
     background: var(--color-gray-100);
+    min-width: 320px;
 }
 
 .mo-field-editor__close {
@@ -2283,6 +2287,9 @@ button.ui-btn.btn-modal-danger:hover,
     display: flex;
     flex-direction: column;
     gap: 16px;
+    flex: 1;
+    overflow-y: auto;
+    min-width: 0;
 }
 
 .mo-structure-section__title {
@@ -2295,12 +2302,12 @@ button.ui-btn.btn-modal-danger:hover,
 }
 
 .mo-structure-section__list {
-    max-height: 380px;
     overflow-y: auto;
     padding-right: 8px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1;
 }
 
 /* Field Item */
@@ -2486,10 +2493,10 @@ button.ui-btn.btn-modal-danger:hover,
 .mo-entries-list {
     max-height: 60vh;
     overflow-y: auto;
-    padding-right: 8px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    padding-right: 0;
 }
 
 .mo-entry-item {
@@ -2550,8 +2557,8 @@ button.ui-btn.btn-modal-danger:hover,
 }
 
 .mo-entry-item__info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.mo-entry-item__name-row { display: flex; align-items: center; gap: 8px; }
-.mo-entry-item__name { font-size: 16px; font-weight: 700; color: var(--color-gray-900); transition: color 0.15s; }
+.mo-entry-item__name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mo-entry-item__name { font-size: 16px; font-weight: 700; color: var(--color-gray-900); transition: color 0.15s; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mo-entry-item--selected .mo-entry-item__name { color: var(--color-primary); }
 
 .mo-entry-item__ref-badge {
@@ -2561,6 +2568,7 @@ button.ui-btn.btn-modal-danger:hover,
     border-radius: 4px;
     background: rgba(228, 228, 231, 0.5);
     color: var(--color-gray-500);
+    white-space: nowrap;
 }
 
 .mo-entry-item__ref-badge--active { background: rgba(75, 185, 97, 0.1); color: var(--color-primary); }

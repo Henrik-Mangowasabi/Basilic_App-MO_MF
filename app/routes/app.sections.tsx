@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useLoaderData, useLocation, useActionData } from "react-router";
 import { authenticate, apiVersion } from "../shopify.server";
 import db from "../db.server";
-import { getMetaobjectCount, getMetafieldCount, getMediaCount, getMenuCount, getTemplatesCount, getActiveThemeId } from "../utils/graphql-helpers.server";
+import { getMetaobjectCount, getMetafieldCount, getMediaCount, getMenuCount, getTemplatesCount, getSectionsCount, getActiveThemeId } from "../utils/graphql-helpers.server";
 import { getReviewStatusMap } from "../utils/reviewStatus.server";
 import { createRouteAction } from "../utils/createRouteAction";
 import "../styles/metafields-table.css";
@@ -30,13 +30,14 @@ export const loader = async ({ request }: { request: Request }) => {
     const shopDomain = session.shop;
 
     // OPTIMISATION: Simplement récupérer l'ID du thème et les counts
-    const [themeId, moCount, mfCount, mediaCount, menuCount, templatesCount, reviewStatusMap] = await Promise.all([
+    const [themeId, moCount, mfCount, mediaCount, menuCount, templatesCount, sectionsCount, reviewStatusMap] = await Promise.all([
         getActiveThemeId(admin),
         getMetaobjectCount(admin, shopDomain),
         getMetafieldCount(admin, shopDomain),
         getMediaCount(admin, shopDomain),
         getMenuCount(admin, shopDomain),
         getTemplatesCount(admin, shopDomain, session.accessToken!),
+        getSectionsCount(admin, shopDomain, session.accessToken!),
         getReviewStatusMap(db, shopDomain, "sections")
     ]);
 
@@ -44,6 +45,7 @@ export const loader = async ({ request }: { request: Request }) => {
         moCount,
         mfCount,
         templatesCount,
+        sectionsCount,
         themeId,
         mediaCount,
         menuCount,
@@ -57,7 +59,7 @@ export const action = createRouteAction({
 });
 
 export default function AppSections() {
-    const { moCount, mfCount, templatesCount, mediaCount, menuCount, shop, reviewStatusMap } = useLoaderData<typeof loader>();
+    const { moCount, mfCount, templatesCount, sectionsCount, mediaCount, menuCount, shop, reviewStatusMap } = useLoaderData<typeof loader>();
     const location = useLocation();
     const actionData = useActionData<{ ok: boolean; action?: string; errors?: { message: string }[] } | null>();
 
@@ -75,7 +77,6 @@ export default function AppSections() {
 
     // Utiliser les résultats du scan
     const sections = sectionResults as unknown as SectionItem[];
-    const totalSections = sections.length;
 
     const handleSort = (columnKey: string) => {
         setSortConfig(prev => {
@@ -237,17 +238,21 @@ export default function AppSections() {
                 <div className="page-header">
                     <AppBrand />
                     <BasilicButton
+                        variant="flat"
                         className="btn-secondary"
                         isLoading={isScanning}
-                        onPress={startScan}
-                        icon={isScanning ? null : <Icons.Refresh />}
+                        onPress={() => {
+                            clearSelection();
+                            startScan();
+                        }}
+                        icon={isScanning ? null : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 16H8v5"/></svg>}
                     >
                         Scan Code
                     </BasilicButton>
                 </div>
 
                 <div className="page-nav-row">
-                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: templatesCount, m: mediaCount, menu: menuCount, sections: totalSections }} />
+                    <NavigationTabs activePath={location.pathname} counts={{ mf: mfCount, mo: moCount, t: templatesCount, m: mediaCount, menu: menuCount, sections: sectionsCount }} />
                     <div style={{ width: '320px' }}>
                         <BasilicSearch value={search} onValueChange={setSearch} placeholder="Rechercher une section..." />
                     </div>
