@@ -38,15 +38,15 @@ export const loader = async ({ request }: { request: Request }) => {
                 const assetsJson = await assetsRes.json();
                 const allAssets = (assetsJson.assets || []) as { key: string }[];
 
-                // 2. Filtrer pour obtenir les fichiers sections/*.liquid (sections/ ou sections/*/...)
+                // 2. Filtrer pour obtenir les fichiers sections/*.liquid (sections/ ou sections/*/... ou en sous-dossiers)
                 const sectionAssets = allAssets.filter((a: { key: string }) =>
-                    /^sections\//i.test(a.key) && a.key.endsWith('.liquid')
+                    a.key.includes('sections/') && a.key.endsWith('.liquid')
                 );
 
-                // Debug: Afficher les 10 premiers fichiers section trouvés
-                const sectionSamples = sectionAssets.slice(0, 10).map(a => a.key);
+                // Debug: Afficher les 15 premiers fichiers section trouvés
+                const sectionSamples = sectionAssets.slice(0, 15).map(a => a.key);
                 console.log(`[SECTION-SCAN] Total assets: ${allAssets.length}, Section files: ${sectionAssets.length}`);
-                console.log(`[SECTION-SCAN] Sample section files:`, sectionSamples);
+                console.log(`[SECTION-SCAN] Sample section files (0-15):`, sectionSamples);
                 controller.enqueue(encoder.encode(sse({ progress: 5, message: `${sectionAssets.length} sections trouvées...` })));
 
                 // 3. Pour chaque section, récupérer le contenu et extraire le nom du schema
