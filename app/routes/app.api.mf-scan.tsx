@@ -93,7 +93,10 @@ export const loader = async ({ request }: { request: Request }) => {
                             attempts++;
                         }
 
-                        if (!content) return;
+                        if (!content) {
+                            console.warn(`Empty content for asset: ${asset.key}`);
+                            return;
+                        }
 
                         mfKeys.forEach((fullKey) => {
                             if (mfInCode.has(fullKey)) return;
@@ -126,7 +129,7 @@ export const loader = async ({ request }: { request: Request }) => {
                     }));
 
                     const scanProgress = 10 + Math.round(((i + batch.length) / scannableAssets.length) * 90);
-                    controller.enqueue(encoder.encode(sse({ progress: scanProgress })));
+                    controller.enqueue(encoder.encode(sse({ progress: scanProgress, status: `Scanned ${i + batch.length}/${scannableAssets.length} files...` })));
                 }
 
                 controller.enqueue(encoder.encode(sse({ progress: 100, results: Array.from(mfInCode) })));

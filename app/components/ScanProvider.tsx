@@ -1,12 +1,22 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react";
 
-// Clés de stockage
-const SCAN_DONE_KEY = "basilic_scan_done";
-const MF_RESULTS_KEY = "mf_scan_results";
-const MO_RESULTS_KEY = "mo_scan_results";
-const TEMPLATE_RESULTS_KEY = "template_scan_results";
-const MENU_RESULTS_KEY = "menu_results";
-const SECTION_RESULTS_KEY = "section_results";
+// Clés de stockage avec domaine
+const getDomainScope = () => {
+    try {
+        const domain = document.location.hostname;
+        return `${domain}:`;
+    } catch {
+        return "local:";
+    }
+};
+
+const domainScope = getDomainScope();
+const SCAN_DONE_KEY = `${domainScope}basilic_scan_done`;
+const MF_RESULTS_KEY = `${domainScope}mf_scan_results`;
+const MO_RESULTS_KEY = `${domainScope}mo_scan_results`;
+const TEMPLATE_RESULTS_KEY = `${domainScope}template_scan_results`;
+const MENU_RESULTS_KEY = `${domainScope}menu_results`;
+const SECTION_RESULTS_KEY = `${domainScope}section_results`;
 
 interface SectionScanResult {
     id: string;
@@ -63,7 +73,7 @@ export function ScanProvider({ children }: ScanProviderProps) {
         setScanProgress(Math.round(total / 5));
     }, []);
 
-    // Charger le cache
+    // Charger le cache du sessionStorage
     useEffect(() => {
         try {
             const mf = sessionStorage.getItem(MF_RESULTS_KEY);
@@ -73,13 +83,39 @@ export function ScanProvider({ children }: ScanProviderProps) {
             const sections = sessionStorage.getItem(SECTION_RESULTS_KEY);
             const done = sessionStorage.getItem(SCAN_DONE_KEY);
 
-            if (mf) setMfResults(new Set(JSON.parse(mf)));
-            if (mo) setMoResults(new Set(JSON.parse(mo)));
-            if (tpl) setTemplateResults(new Set(JSON.parse(tpl)));
-            if (menu) setMenuResults(new Set(JSON.parse(menu)));
-            if (sections) setSectionResults(JSON.parse(sections));
-            if (done === "true") setHasScanRun(true);
-        } catch (e) {}
+            let loadedCount = 0;
+            if (mf) {
+                const parsed = JSON.parse(mf);
+                setMfResults(new Set(Array.isArray(parsed) ? parsed : []));
+                loadedCount++;
+            }
+            if (mo) {
+                const parsed = JSON.parse(mo);
+                setMoResults(new Set(Array.isArray(parsed) ? parsed : []));
+                loadedCount++;
+            }
+            if (tpl) {
+                const parsed = JSON.parse(tpl);
+                setTemplateResults(new Set(Array.isArray(parsed) ? parsed : []));
+                loadedCount++;
+            }
+            if (menu) {
+                const parsed = JSON.parse(menu);
+                setMenuResults(new Set(Array.isArray(parsed) ? parsed : []));
+                loadedCount++;
+            }
+            if (sections) {
+                const parsed = JSON.parse(sections);
+                setSectionResults(Array.isArray(parsed) ? parsed : []);
+                loadedCount++;
+            }
+            if (done === "true") {
+                setHasScanRun(true);
+                console.log(`✅ Loaded ${loadedCount} scan result sets from cache`);
+            }
+        } catch (e) {
+            console.error("Error loading scan cache:", e);
+        }
     }, []);
 
     const runScan = useCallback(async () => {
@@ -126,10 +162,16 @@ export function ScanProvider({ children }: ScanProviderProps) {
         } catch (e) {
             if ((e as Error).name !== "AbortError") {
                 const errorMsg = String(e);
-                console.error("Scan failed", e);
+                console.error("❌ Scan failed:", e);
                 setScanError(errorMsg);
-                // Effacer les résultats partiels en cas d'erreur
+                // Effacer les résultats partiels ET la flag en cas d'erreur pour permettre un retry
                 sessionStorage.removeItem(SCAN_DONE_KEY);
+                // Effacer aussi les résultats partiels
+                sessionStorage.removeItem(MF_RESULTS_KEY);
+                sessionStorage.removeItem(MO_RESULTS_KEY);
+                sessionStorage.removeItem(TEMPLATE_RESULTS_KEY);
+                sessionStorage.removeItem(MENU_RESULTS_KEY);
+                sessionStorage.removeItem(SECTION_RESULTS_KEY);
             }
         } finally {
             setIsScanning(false);
@@ -207,19 +249,20 @@ async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: nu
         }
 
         if (!response.ok) {
-            console.error(`Endpoint error ${url}: ${response.status}`);
-            return [];
+            console.error(`Endpoint error ${url}: ${response.status} ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}`);
         }
 
         if (!response.body) {
             console.error(`No response body from ${url}`);
-            return [];
+            throw new Error("No response body");
         }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let results: string[] = [];
         let buffer = "";
+        let receivedResults = false;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -235,11 +278,27 @@ async function scanEndpoint(url: string, signal: AbortSignal, onProgress: (p: nu
                 try {
                     const data = JSON.parse(trimmed.slice(6));
                     if (data.progress !== undefined) onProgress(data.progress);
-                    if (data.results) results = data.results;
-                    if (data.error) console.warn(`Stream error from ${url}:`, data.error);
-                } catch (e) {}
+                    if (data.results) {
+                        results = Array.isArray(data.results) ? data.results : [];
+                        receivedResults = true;
+                    }
+                    if (data.error) {
+                        console.warn(`Stream error from ${url}:`, data.error);
+                        throw new Error(data.error);
+                    }
+                } catch (e) {
+                    console.error(`Parse error from ${url}:`, e);
+                    // Continue processing other lines
+                }
             }
         }
+
+        if (!receivedResults) {
+            console.warn(`No results received from ${url}`);
+            return [];
+        }
+
+        console.log(`✅ Scan completed for ${url}: ${results.length} items found`);
         return results;
     } catch (e) {
         console.error(`Scan endpoint error for ${url}:`, e);
