@@ -1373,7 +1373,7 @@ button.ui-btn.btn-modal-danger:hover,
     font-size: 14px;
     font-weight: 400;
     color: #18181B;
-    min-width: 0;
+    min-height: 0;
 }
 
 .basilic-search__input::placeholder {
@@ -1992,7 +1992,7 @@ button.ui-btn.btn-modal-danger:hover,
 .cell-file-info {
     display: flex;
     flex-direction: column;
-    min-width: 0;
+    min-height: 0;
 }
 
 .cell-file-info__name {
@@ -2131,7 +2131,7 @@ button.ui-btn.btn-modal-danger:hover,
     height: fit-content;
     flex-shrink: 0;
     background: var(--color-gray-100);
-    min-width: 320px;
+    z-index: 10;
 }
 
 .mo-field-editor__close {
@@ -2290,7 +2290,7 @@ button.ui-btn.btn-modal-danger:hover,
     gap: 16px;
     flex: 1;
     overflow-y: auto;
-    min-width: 0;
+    min-height: 0;
 }
 
 .mo-structure-section__title {
