@@ -3114,7 +3114,7 @@ button.ui-btn.btn-modal-danger:hover,
 
 /* Override pour les modales avec contenu mo-modal-content */
 .ui-modal__body:has(.mo-modal-content) {
-    overflow: visible;
+    overflow: auto;
     padding: 0;
 }
 .ui-modal__body > div {
@@ -3136,6 +3136,8 @@ button.ui-btn.btn-modal-danger:hover,
     display: flex;
     gap: 12px;
     justify-content: flex-end;
+    position: relative;
+    z-index: 20;
 }
 
 /* ============================================
