@@ -105,19 +105,21 @@ export function ScanProvider({ children }: ScanProviderProps) {
                 { url: `${basePath}/api/section-scan`, key: 'sections', setter: (res: any) => setSectionResults(res), storage: SECTION_RESULTS_KEY }
             ];
 
-            await Promise.all(endpoints.map(async (e) => {
-                try {
-                    const res = await scanEndpoint(e.url, abort.signal, (p) => {
-                        progressRef.current[e.key as keyof typeof progressRef.current] = p;
-                        updateProgress();
-                    });
-                    e.setter(res);
-                    sessionStorage.setItem(e.storage, JSON.stringify(res));
-                } catch (err) {
-                    console.error(`Endpoint ${e.url} failed:`, err);
-                    throw err;
-                }
+            const results = await Promise.allSettled(endpoints.map(async (e) => {
+                const res = await scanEndpoint(e.url, abort.signal, (p) => {
+                    progressRef.current[e.key as keyof typeof progressRef.current] = p;
+                    updateProgress();
+                });
+                e.setter(res);
+                sessionStorage.setItem(e.storage, JSON.stringify(res));
+                return { key: e.key, success: true };
             }));
+
+            // Vérifier si au moins un scan a réussi
+            const hasResults = results.some(r => r.status === 'fulfilled');
+            if (!hasResults) {
+                throw new Error("Aucun endpoint de scan n'a réussi");
+            }
 
             sessionStorage.setItem(SCAN_DONE_KEY, "true");
             setHasScanRun(true);

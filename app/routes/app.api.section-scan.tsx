@@ -25,33 +25,13 @@ export const loader = async ({ request }: { request: Request }) => {
             try {
                 controller.enqueue(encoder.encode(sse({ progress: 1, message: "Récupération des assets..." })));
 
-                // 1. Lister TOUS les assets du thème via GraphQL (pagination complète, sans limite)
-                let allAssets: any[] = [];
-                let hasNextPage = true;
-                let cursor: string | null = null;
-
-                while (hasNextPage) {
-                    const query = `
-                        query GetThemeAssets($themeId: ID!, $after: String) {
-                            theme(id: $themeId) {
-                                assets(first: 250, after: $after) {
-                                    pageInfo { hasNextPage endCursor }
-                                    nodes { key }
-                                }
-                            }
-                        }
-                    `;
-                    const graphqlRes = await admin.graphql(query, {
-                        variables: { themeId: `gid://shopify/Theme/${activeThemeId}`, after: cursor }
-                    });
-                    const graphqlJson: any = await graphqlRes.json();
-                    const assets = graphqlJson.data?.theme?.assets?.nodes || [];
-                    const pageInfo = graphqlJson.data?.theme?.assets?.pageInfo || {};
-
-                    allAssets = allAssets.concat(assets);
-                    hasNextPage = pageInfo.hasNextPage || false;
-                    cursor = pageInfo.endCursor || null;
-                }
+                // 1. Lister TOUS les assets du thème via REST API
+                const assetsRes = await fetch(
+                    `https://${domain}/admin/api/2024-10/themes/${activeThemeId}/assets.json`,
+                    { headers: { "X-Shopify-Access-Token": session.accessToken!, "Content-Type": "application/json" } }
+                );
+                const assetsJson = await assetsRes.json();
+                const allAssets = (assetsJson.assets || []) as { key: string }[];
 
                 // 2. Filtrer pour obtenir les fichiers sections/*.liquid
                 const sectionAssets = allAssets.filter((a: { key: string }) =>
