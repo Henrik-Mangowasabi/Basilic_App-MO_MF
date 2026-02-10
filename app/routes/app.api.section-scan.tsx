@@ -33,9 +33,9 @@ export const loader = async ({ request }: { request: Request }) => {
                 const assetsJson = await assetsRes.json();
                 const allAssets = (assetsJson.assets || []) as { key: string }[];
 
-                // 2. Filtrer pour obtenir les fichiers sections/*.liquid
+                // 2. Filtrer pour obtenir les fichiers sections/*.liquid (sections/ ou sections/*/...)
                 const sectionAssets = allAssets.filter((a: { key: string }) =>
-                    a.key.startsWith('sections/') && a.key.endsWith('.liquid')
+                    /^sections\//i.test(a.key) && a.key.endsWith('.liquid')
                 );
 
                 controller.enqueue(encoder.encode(sse({ progress: 5, message: `${sectionAssets.length} sections trouvées...` })));

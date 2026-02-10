@@ -535,7 +535,19 @@ export default function AppMo() {
     const renderCell = (item: any, columnKey: React.Key) => {
         switch (columnKey) {
             case "name": return (<div className="mf-cell mf-cell--multi"><span className="mf-text--title">{item.name}</span>{item.description && <span className="mf-text--desc">{item.description}</span>}</div>);
-            case "fullKey": return (<div className="mf-cell mf-cell--key"><span className="mf-text--key">{item.type}</span></div>);
+            case "fullKey": return (
+                <div
+                    className="mf-cell mf-cell--key"
+                    onClick={() => {
+                        navigator.clipboard.writeText(item.type);
+                        setToast({ title: "Copié", msg: item.type });
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    title="Cliquer pour copier"
+                >
+                    <span className="mf-text--key">{item.type}</span>
+                </div>
+            );
             case "fields": return (<div className="mf-cell mf-cell--type"><div className="mf-chip cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => { setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); }} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStructModalData(item); setSelectedField(null); setPendingFieldChanges({}); } }}>{item.fieldsCount} Champs</div></div>);
             case "code_usage": {
                 const inCode = moResults.size > 0 ? moResults.has(item.type) : (item.code_usage === 'Oui');

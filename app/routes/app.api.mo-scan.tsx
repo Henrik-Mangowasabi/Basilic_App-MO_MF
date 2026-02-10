@@ -67,12 +67,17 @@ export const loader = async ({ request }: { request: Request }) => {
 
                             moTypes.forEach(type => {
                                 if (metaobjectsInCode.has(type)) return;
-                                // Recherche ultra-large : guillemets, après un point, ou entre crochets
-                                if (content.includes(`"${type}"`) || 
-                                    content.includes(`'${type}'`) || 
-                                    content.includes(`.${type}`) ||
-                                    content.includes(`['${type}']`) ||
-                                    content.includes(`["${type}"]`)) {
+                                // Détection robuste : guillemets, après un point, ou entre crochets, avec word boundaries
+                                const escapedType = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                const patterns = [
+                                    `"${escapedType}"`,
+                                    `'${escapedType}'`,
+                                    `\\.${escapedType}\\b`,
+                                    `\\['${escapedType}'\\]`,
+                                    `\\["${escapedType}"\\]`,
+                                ];
+                                const regex = new RegExp(patterns.join('|'), 'i');
+                                if (regex.test(content)) {
                                     metaobjectsInCode.add(type);
                                 }
                             });

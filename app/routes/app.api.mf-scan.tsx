@@ -99,14 +99,21 @@ export const loader = async ({ request }: { request: Request }) => {
                             if (mfInCode.has(fullKey)) return;
                             const parts = fullKey.split('.');
                             const key = parts[parts.length - 1];
-                            
-                            // Détection ultra-large : clé complète, clé seule, avec ou sans filtres Liquid
-                            if (content.includes(fullKey) || 
-                                content.includes(`.${key}`) || 
-                                content.includes(`"${key}"`) || 
-                                content.includes(`'${key}'`) || 
-                                content.includes(`["${key}"]`) ||
-                                content.includes(`['${key}']`)) {
+                            const namespace = parts[0];
+
+                            // Détection robuste avec regex pour éviter les faux positifs
+                            const patterns = [
+                                fullKey,  // clé complète exacte
+                                `metafields\\.${fullKey}`,  // metafields.namespace.key
+                                `metafields\\.${namespace}\\.${key}`,  // pattern complet
+                                `\\["${key}"\\]`,  // ["key"]
+                                `\\['${key}'\\]`,  // ['key']
+                                `metafields\\.get\\('${fullKey}'`,  // metafields.get('...')
+                                `metafields\\.${key}\\b`,  // word boundary après key
+                            ];
+
+                            const regex = new RegExp(patterns.join('|'), 'i');
+                            if (regex.test(content)) {
                                 mfInCode.add(fullKey);
                             }
                         });

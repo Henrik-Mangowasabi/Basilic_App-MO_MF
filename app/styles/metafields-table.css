@@ -1044,6 +1044,10 @@ tr[role="rowgroup"]::after {
 
 /* --- Modale Assignations (style Créateurs / Gérer les entrées) --- */
 .mf-assignments-modal__wrap {
+    display: flex;
+    flex-direction: column;
+    max-height: 70vh;
+    min-height: 0;
 }
 .mf-assignments-modal__header {
     display: flex;

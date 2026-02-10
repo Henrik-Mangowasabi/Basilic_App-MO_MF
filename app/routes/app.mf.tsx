@@ -479,7 +479,19 @@ export default function AppMf() {
     const renderCell = (item: any, key: React.Key) => {
         switch (key) {
             case "name": return (<div className="mf-cell mf-cell--multi"><span className="mf-text--title">{item.name}</span><span className="mf-text--desc">{item.description || "Aucune description"}</span></div>);
-            case "fullKey": return (<div className="mf-cell mf-cell--key"><span className="mf-text--key">{item.fullKey}</span></div>);
+            case "fullKey": return (
+                <div
+                    className="mf-cell mf-cell--key"
+                    onClick={() => {
+                        navigator.clipboard.writeText(item.fullKey);
+                        setToast({ title: "Copié", msg: item.fullKey });
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    title="Cliquer pour copier"
+                >
+                    <span className="mf-text--key">{item.fullKey}</span>
+                </div>
+            );
             case "type": return (<div className="mf-cell mf-cell--type"><span className="mf-chip">{item.typeDisplay}</span></div>);
             case "status": return (
                 <div className="mf-cell mf-cell--status mf-cell--multi">
