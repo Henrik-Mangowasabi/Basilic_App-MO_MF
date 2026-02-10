@@ -43,7 +43,10 @@ export const loader = async ({ request }: { request: Request }) => {
                     /^sections\//i.test(a.key) && a.key.endsWith('.liquid')
                 );
 
+                // Debug: Afficher les 10 premiers fichiers section trouvés
+                const sectionSamples = sectionAssets.slice(0, 10).map(a => a.key);
                 console.log(`[SECTION-SCAN] Total assets: ${allAssets.length}, Section files: ${sectionAssets.length}`);
+                console.log(`[SECTION-SCAN] Sample section files:`, sectionSamples);
                 controller.enqueue(encoder.encode(sse({ progress: 5, message: `${sectionAssets.length} sections trouvées...` })));
 
                 // 3. Pour chaque section, récupérer le contenu et extraire le nom du schema

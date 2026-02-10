@@ -76,7 +76,7 @@ export const loader = async ({ request }: { request: Request }) => {
                 console.log(`[MF-SCAN] Total assets: ${allAssets.length}, Scannable: ${scannableAssets.length}`);
 
                 const mfInCode = new Set<string>();
-                const batchSize = 10;
+                const batchSize = 5;  // Réduit de 10 à 5 pour éviter rate limit
                 let assetsWithContent = 0;
 
                 // 3. Scan des assets
@@ -98,7 +98,9 @@ export const loader = async ({ request }: { request: Request }) => {
                                     content = json.asset?.value || "";
                                     break;
                                 } else if (res.status === 429) {
-                                    await new Promise(r => setTimeout(r, 500));
+                                    // Exponential backoff: 2s, 4s, 8s
+                                    const backoffMs = Math.pow(2, attempts + 1) * 1000;
+                                    await new Promise(r => setTimeout(r, backoffMs));
                                 } else { break; }
                             } catch (e) {
                                 await new Promise(r => setTimeout(r, 200));
@@ -143,6 +145,8 @@ export const loader = async ({ request }: { request: Request }) => {
 
                     const scanProgress = 10 + Math.round(((i + batch.length) / scannableAssets.length) * 90);
                     controller.enqueue(encoder.encode(sse({ progress: scanProgress, status: `Scanned ${i + batch.length}/${scannableAssets.length} files...` })));
+                    // Délai plus long entre les batches pour respecter rate limits Shopify
+                    await new Promise(r => setTimeout(r, 200));
                 }
 
                 console.log(`[MF-SCAN] Scan complete. Assets with content: ${assetsWithContent}. Metafields found in code: ${mfInCode.size}`);
